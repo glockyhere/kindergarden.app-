@@ -5,3 +5,4 @@ database
 .impeccable
 backend/tests
 *.db
+!deploy_data/bogcha_data.db

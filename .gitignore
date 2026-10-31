@@ -39,3 +39,4 @@ e2e/playwright-report/
 backend/.pytest_cache/
 .vercel
 DEMO_LOGIN.txt
+deploy_data/
