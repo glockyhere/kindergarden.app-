@@ -4,8 +4,10 @@
 // ============================================================================
 
 // The e2e suite points this at an isolated test backend via window.__BOGCHA_API_BASE__;
-// production is unaffected since that global is never set outside of tests.
-const API_BASE = window.__BOGCHA_API_BASE__ || 'http://127.0.0.1:8000/api/v1';
+// Local dev (frontend on :4321) talks to the API on :8000; when deployed, the
+// backend serves this page too, so the API is on the same origin.
+const API_BASE = window.__BOGCHA_API_BASE__ ||
+  (location.port === '4321' || location.protocol === 'file:' ? 'http://127.0.0.1:8000/api/v1' : '/api/v1');
 
 const STATE = {
   theme: 'light',

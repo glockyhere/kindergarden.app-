@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: bogchaos
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: BOGCHA_SECRET_KEY
+        generateValue: true
+      # Optional: set to enable parent notifications via Telegram.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false

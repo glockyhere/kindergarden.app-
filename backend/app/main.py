@@ -6,6 +6,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from app.database import init_db
 from app import finance, telegram_bot
@@ -66,7 +67,7 @@ app.include_router(audit.router)
 app.include_router(settings.router)
 app.include_router(reports.router)
 
-@app.get("/")
+@app.get("/api")
 def root():
     return {
         "app": "Bog'chaOS SaaS API",
@@ -74,6 +75,11 @@ def root():
         "status": "online",
         "docs_url": "/docs"
     }
+
+# When deployed, the backend also serves the dashboard so both share one origin.
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 if __name__ == "__main__":
     import uvicorn
