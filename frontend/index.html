@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>try { const t = localStorage.getItem('bogcha_theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=20261029e">
+  <link rel="stylesheet" href="styles.css?v=20261031b">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -313,8 +313,11 @@
           </div>
 
           <div class="filter-bar">
-            <div class="group-tabs" id="groupFilterTabs">
-              <button class="filter-tab active" data-group="ALL" data-i18n="common.all">Barchasi</button>
+            <div class="group-tabs-wrap">
+              <div class="group-tabs" id="groupFilterTabs">
+                <button class="filter-tab active" data-group="ALL" data-i18n="common.all">Barchasi</button>
+              </div>
+              <div class="group-tab-actions" id="groupTabActions"></div>
             </div>
             <div class="filter-inputs">
               <input type="text" class="input-search" id="childSearchFilter" placeholder="Ism yoki ota-ona telefoni..." data-i18n-placeholder="children.search.placeholder">
@@ -1104,6 +1107,29 @@
   <!-- ========================================== -->
   <!-- MODAL: YANGI GURUH QO'SHISH (director/accountant/super_admin) -->
   <!-- ========================================== -->
+  <div class="modal-overlay" id="deleteGroupModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" id="deleteGroupTitle" data-i18n="groups.delete.title">Guruhni o'chirish</h3>
+        <button class="modal-close" onclick="closeModal('deleteGroupModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <form id="deleteGroupForm" onsubmit="handleDeleteGroupSubmit(event)">
+        <div class="modal-body">
+          <p class="delete-group-text" id="deleteGroupText"></p>
+          <div class="form-group" id="deleteGroupMoveField" hidden>
+            <label for="deleteGroupMoveTo" data-i18n="groups.delete.moveTo">Bolalarni qaysi guruhga o'tkazish kerak?</label>
+            <select id="deleteGroupMoveTo" class="custom-select"></select>
+          </div>
+          <p class="delete-group-note" data-i18n="groups.delete.historyNote">Guruhdagi bolalarning davomati, to'lovlari va hisobotlari saqlanib qoladi.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('deleteGroupModal')" data-i18n="common.cancel">Bekor qilish</button>
+          <button type="submit" class="btn btn-danger" id="deleteGroupSubmit" data-i18n="groups.delete.confirm">O'chirish</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="addGroupModal">
     <div class="modal-box">
       <div class="modal-header">
@@ -1124,6 +1150,7 @@
           <div class="form-group"><label for="newGroupFee" data-i18n="modal.addGroup.fee">Oylik bazaviy to'lov (UZS)</label><input type="number" min="0" step="any" id="newGroupFee" required class="custom-input" placeholder="Masalan: 2800000"></div>
         </div>
         <div class="modal-footer">
+          <button type="button" class="btn btn-danger modal-footer-start" id="groupModalDelete" hidden onclick="openDeleteGroupModal()" data-i18n="groups.delete.button">Guruhni o'chirish</button>
           <button type="button" class="btn btn-secondary" onclick="closeModal('addGroupModal')" data-i18n="common.cancel">Bekor qilish</button>
           <button type="submit" class="btn btn-primary" id="groupModalSubmit" data-i18n="modal.addGroup.submitNew">Guruh qo'shish</button>
         </div>
@@ -1349,7 +1376,7 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="i18n.js?v=20261029e"></script>
-  <script src="app.js?v=20261029e"></script>
+  <script src="i18n.js?v=20261031b"></script>
+  <script src="app.js?v=20261031b"></script>
 </body>
 </html>

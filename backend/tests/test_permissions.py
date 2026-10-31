@@ -55,6 +55,7 @@ ROUTE_CASES = [
     ("GET", "/api/v1/reports/period?period=2025-01", "finance.reports", None),
     ("GET", "/api/v1/reports/child/c1", "finance.reports", None),
     ("GET", "/api/v1/reports/years", "finance.reports", None),
+    ("DELETE", "/api/v1/groups/nope", "groups.delete", None),
 ]
 
 ALL_ROLES = ["super_admin", "director", "accountant", "teacher", "nurse"]

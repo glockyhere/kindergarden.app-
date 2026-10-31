@@ -16,7 +16,7 @@ def _attention(conn, org: str, today: str) -> list[dict]:
         FROM groups g
         JOIN children ch ON ch.group_id = g.id AND ch.status = 'ACTIVE'
         LEFT JOIN attendance att ON att.child_id = ch.id AND att.date = ?
-        WHERE g.org_id = ?
+        WHERE g.org_id = ? AND g.archived_at IS NULL
         GROUP BY g.id ORDER BY g.name
     """, (today, org)).fetchall()
     for g in per_group:
@@ -46,7 +46,7 @@ def _attention(conn, org: str, today: str) -> list[dict]:
         SELECT COUNT(*) FROM (
             SELECT g.capacity, COUNT(ch.id) AS n FROM groups g
             LEFT JOIN children ch ON ch.group_id = g.id AND ch.status = 'ACTIVE'
-            WHERE g.org_id = ? GROUP BY g.id HAVING n > g.capacity
+            WHERE g.org_id = ? AND g.archived_at IS NULL GROUP BY g.id HAVING n > g.capacity
         )
     """, (org,)).fetchone()[0]
     if over:

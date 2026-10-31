@@ -332,6 +332,9 @@ def migrate(cursor):
     cursor.execute("UPDATE organizations SET staff_late_penalty_pct = 25 WHERE staff_late_penalty_pct IS NULL")
     cursor.execute("UPDATE organizations SET staff_deduction_start = ? WHERE staff_deduction_start IS NULL", (next_month,))
 
+    if "archived_at" not in {r[1] for r in cursor.execute("PRAGMA table_info(groups)")}:
+        cursor.execute("ALTER TABLE groups ADD COLUMN archived_at TEXT")
+
     payroll_columns = {r[1] for r in cursor.execute("PRAGMA table_info(staff_payroll)")}
     for column, ddl in (("absent_days", "INTEGER"), ("late_days", "INTEGER"),
                         ("absence_deduction", "REAL"), ("late_deduction", "REAL")):

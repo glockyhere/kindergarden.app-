@@ -810,8 +810,25 @@ function renderGroupFilterTabs() {
       container.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       renderChildrenTable();
+      renderGroupTabActions();
     });
   });
+  if (!container.querySelector('.filter-tab.active')) container.querySelector('.filter-tab')?.classList.add('active');
+  renderGroupTabActions();
+}
+
+// Edit / delete buttons for the group picked in the children page tabs.
+function renderGroupTabActions() {
+  const box = document.getElementById('groupTabActions');
+  if (!box) return;
+  const name = document.querySelector('#groupFilterTabs .filter-tab.active')?.getAttribute('data-group');
+  const g = STATE.groups.find(x => x.name === name);
+  if (!g) { box.innerHTML = ''; return; }
+  const id = escapeHtml(g.id);
+  box.innerHTML = [
+    can('groups.manage') ? `<button type="button" class="btn btn-sm btn-secondary" onclick="openEditGroupModal('${id}')">${PENCIL_ICON}<span>${t('groups.edit.button')}</span></button>` : '',
+    can('groups.delete') ? `<button type="button" class="btn btn-sm btn-danger" onclick="openDeleteGroupModal('${id}')">${t('groups.delete.button')}</button>` : '',
+  ].join('');
 }
 
 function setGroupModalMode(group) {
@@ -819,6 +836,7 @@ function setGroupModalMode(group) {
   document.getElementById('groupModalTitle').textContent = group ? t('modal.addGroup.titleEdit', { name: group.name }) : t('modal.addGroup.titleNew');
   document.getElementById('groupModalSubmit').textContent = group ? t('common.save') : t('modal.addGroup.submitNew');
   document.getElementById('newGroupName').disabled = !!group;
+  document.getElementById('groupModalDelete').hidden = !(group && can('groups.delete'));
 }
 
 function openAddGroupModal() {
@@ -840,6 +858,50 @@ function openEditGroupModal(groupId) {
   document.getElementById('newGroupFee').value = g.fee ?? '';
   setGroupModalMode(g);
   openModal('addGroupModal');
+}
+
+function openDeleteGroupModal(groupId = STATE.editingGroupId) {
+  const g = STATE.groups.find(x => x.id === groupId);
+  if (!g) return;
+  STATE.deletingGroupId = g.id;
+  const others = STATE.groups.filter(x => x.id !== g.id);
+  const select = document.getElementById('deleteGroupMoveTo');
+  const submit = document.getElementById('deleteGroupSubmit');
+  document.getElementById('deleteGroupTitle').textContent = t('groups.delete.titleNamed', { name: g.name });
+  select.innerHTML = others.map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)} (${x.count}/${x.capacity})</option>`).join('');
+  let text;
+  if (!g.count) text = t('groups.delete.empty', { name: g.name });
+  else if (others.length) text = t('groups.delete.hasChildren', { name: g.name, n: g.count });
+  else text = t('groups.delete.noTarget', { name: g.name, n: g.count });
+  document.getElementById('deleteGroupText').textContent = text;
+  document.getElementById('deleteGroupMoveField').hidden = !(g.count && others.length);
+  submit.disabled = !!(g.count && !others.length);
+  closeModal('addGroupModal');
+  openModal('deleteGroupModal');
+}
+
+async function handleDeleteGroupSubmit(e) {
+  e.preventDefault();
+  const g = STATE.groups.find(x => x.id === STATE.deletingGroupId);
+  if (!g) return;
+  const moveTo = g.count ? document.getElementById('deleteGroupMoveTo').value : '';
+  const query = moveTo ? `?move_to=${encodeURIComponent(moveTo)}` : '';
+  const submit = document.getElementById('deleteGroupSubmit');
+  submit.disabled = true;
+  try {
+    const res = await apiFetch(`${API_BASE}/groups/${encodeURIComponent(g.id)}${query}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || t('toast.genericError'));
+    closeModal('deleteGroupModal');
+    showToast(data.moved
+      ? t('groups.delete.doneMoved', { name: g.name, n: data.moved, target: data.moved_to })
+      : t('groups.delete.done', { name: g.name }), 'success');
+    syncWithBackend();
+  } catch (err) {
+    showToast(err.message || t('toast.genericError'), 'warning');
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 function handleAddGroupSubmit(e) {

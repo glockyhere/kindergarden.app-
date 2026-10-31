@@ -59,7 +59,7 @@ def get_groups(user: dict = Depends(require("children.view"))):
            COUNT(ch.id) as current_count
     FROM groups g
     LEFT JOIN children ch ON g.id = ch.group_id AND ch.status = 'ACTIVE'
-    WHERE g.org_id = ?
+    WHERE g.org_id = ? AND g.archived_at IS NULL
     GROUP BY g.id
     ORDER BY g.name
     """, (user["org"],))
@@ -87,7 +87,7 @@ def create_group(data: GroupCreateSchema, user: dict = Depends(require("groups.m
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("SELECT id FROM groups WHERE name = ? AND org_id = ?", (data.name, org))
+    c.execute("SELECT id FROM groups WHERE name = ? AND org_id = ? AND archived_at IS NULL", (data.name, org))
     if c.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="Bu nomli guruh allaqachon mavjud")
@@ -113,7 +113,8 @@ def update_group(group_id: str, data: GroupUpdateSchema, user: dict = Depends(re
         raise HTTPException(status_code=400, detail="Sig'im va to'lov musbat bo'lishi kerak")
     org = user["org"]
     conn = get_connection()
-    group = conn.execute("SELECT name FROM groups WHERE id = ? AND org_id = ?", (group_id, org)).fetchone()
+    group = conn.execute("SELECT name FROM groups WHERE id = ? AND org_id = ? AND archived_at IS NULL",
+                         (group_id, org)).fetchone()
     if not group:
         conn.close()
         raise HTTPException(status_code=404, detail="Guruh topilmadi")
@@ -127,6 +128,45 @@ def update_group(group_id: str, data: GroupUpdateSchema, user: dict = Depends(re
     conn.commit()
     conn.close()
     return {"success": True, "group_id": group_id}
+
+@router.delete("/groups/{group_id}")
+def delete_group(group_id: str, move_to: Optional[str] = None, user: dict = Depends(require("groups.delete"))):
+    """Removes a group from use. Its row is kept (archived) so past attendance, bills and
+    reports of children who were in it still show their group."""
+    org = user["org"]
+    conn = get_connection()
+    group = conn.execute("SELECT name FROM groups WHERE id = ? AND org_id = ? AND archived_at IS NULL",
+                         (group_id, org)).fetchone()
+    if not group:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Guruh topilmadi")
+
+    active = conn.execute("SELECT COUNT(*) FROM children WHERE group_id = ? AND status = 'ACTIVE'",
+                          (group_id,)).fetchone()[0]
+    target = None
+    if active:
+        if not move_to:
+            conn.close()
+            raise HTTPException(status_code=400,
+                                detail=f"Guruhda {active} ta bola bor. Avval ularni boshqa guruhga o'tkazing.")
+        target = conn.execute("SELECT id, name FROM groups WHERE id = ? AND org_id = ? AND archived_at IS NULL",
+                              (move_to, org)).fetchone()
+        if not target or target["id"] == group_id:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Bolalarni o'tkazish uchun boshqa guruhni tanlang")
+        conn.execute("UPDATE children SET group_id = ? WHERE group_id = ? AND status = 'ACTIVE'",
+                     (target["id"], group_id))
+
+    conn.execute("UPDATE groups SET archived_at = CURRENT_TIMESTAMP WHERE id = ?", (group_id,))
+    message = f"{group['name']} guruhi o'chirildi."
+    if target:
+        message += f" {active} ta bola {target['name']} guruhiga o'tkazildi."
+    conn.execute("INSERT INTO activity_logs (org_id, icon, message) VALUES (?, '🗑️', ?)", (org, message))
+    audit.record(conn, user, "groups.delete", "group", group_id, group["name"],
+                 {"moved_to": {"old": None, "new": f"{target['name']} ({active})"}} if target else None)
+    conn.commit()
+    conn.close()
+    return {"success": True, "group_id": group_id, "moved": active, "moved_to": target["name"] if target else None}
 
 @router.get("/children")
 def get_children(group: Optional[str] = None, search: Optional[str] = None,
@@ -200,7 +240,8 @@ def create_child(data: ChildCreateSchema, user: dict = Depends(require("children
     conn = get_connection()
     c = conn.cursor()
 
-    c.execute("SELECT id, monthly_fee FROM groups WHERE name = ? AND org_id = ?", (data.group_name, org))
+    c.execute("SELECT id, monthly_fee FROM groups WHERE name = ? AND org_id = ? AND archived_at IS NULL",
+              (data.group_name, org))
     group = c.fetchone()
     if not group:
         conn.close()
