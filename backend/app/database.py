@@ -386,6 +386,11 @@ def seed_all_data(cursor):
         ("u_superadmin", org_id, "SUPER_ADMIN", "Nigora", "+998900000001", gen_password(), "N"),
         ("u_nurse2", org_id, "NURSE", "Turdiqulova Nozliyaoy", "+998900000002", gen_password(), "TN"),
     ]
+    # Extra super admin from the deployment's environment, so its password never
+    # lives in the repository.
+    admin_phone, admin_password = os.getenv("BOGCHA_ADMIN_PHONE"), os.getenv("BOGCHA_ADMIN_PASSWORD")
+    if admin_phone and admin_password:
+        users.append(("u_admin_env", org_id, "SUPER_ADMIN", "Super Admin", admin_phone, admin_password, "SA"))
     from app.security import hash_password
     cursor.executemany(
         "INSERT OR REPLACE INTO users (id, org_id, role, full_name, phone, password_hash, avatar) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -395,7 +400,7 @@ def seed_all_data(cursor):
     # Shown once on first run only; the database keeps just the hashes.
     print("[Bog'chaOS] Birinchi marta ishga tushirildi — yangi parollar yaratildi:")
     for uid, _, role, name, phone, pw, _ in users:
-        print(f"  {role:12s} | {name:25s} | {phone:16s} | {pw}")
+        print(f"  {role:12s} | {name:25s} | {phone:16s} | {'(env)' if uid == 'u_admin_env' else pw}")
 
     # 2. Groups
     groups = [
