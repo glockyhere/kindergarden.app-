@@ -1,0 +1,7 @@
+.venv
+e2e
+docs
+database
+.impeccable
+backend/tests
+*.db

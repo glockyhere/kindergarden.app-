@@ -37,3 +37,5 @@ e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
 backend/.pytest_cache/
+.vercel
+DEMO_LOGIN.txt

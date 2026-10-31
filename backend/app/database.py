@@ -373,8 +373,11 @@ def seed_all_data(cursor):
     # 1.1 Users (Direktor, Tarbiyachi, Buxgalter, Super Admin, Hamshira)
     # Passwords are generated fresh on first run — never hardcode real credentials here.
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*-_="
+    # BOGCHA_SEED_PASSWORD gives every seeded account one known password, for
+    # demo deployments whose database is rebuilt on each fresh start.
+    seed_password = os.getenv("BOGCHA_SEED_PASSWORD")
     def gen_password(length=16):
-        return "".join(secrets.choice(alphabet) for _ in range(length))
+        return seed_password or "".join(secrets.choice(alphabet) for _ in range(length))
 
     users = [
         ("u_dir", org_id, "DIRECTOR", "Nodira Azimova", "+998901112233", gen_password(), "NA"),
