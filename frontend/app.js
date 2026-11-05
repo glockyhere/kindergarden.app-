@@ -544,6 +544,7 @@ function renderStaffPayroll() {
         <td>
           <b>${escapeHtml(p.staff_name)}</b><br>
           <span class="badge badge-indigo">${escapeHtml(p.role)}</span>
+          ${p.staff_active === false ? `<span class="badge badge-slate">${t('staff.leftBadge')}</span>` : ''}
         </td>
         <td>${escapeHtml(p.phone)}</td>
         <td>${formatMoney(p.base_salary)}</td>
@@ -560,7 +561,7 @@ function renderStaffPayroll() {
           ${p.status === 'PAID'
             ? `<button class="btn btn-sm btn-secondary" disabled>${t('staff.paid')}</button>`
             : `<button class="btn btn-sm btn-success" onclick="payStaffSalary('${p.id}', ${toPay})">${t('staff.payBtn')}</button>`}
-          ${canManage ? `<button class="btn btn-sm btn-danger staff-delete-btn" onclick="deleteStaff('${escapeHtml(p.staff_id)}')" title="${t('common.delete')}">${t('common.delete')}</button>` : ''}
+          ${canManage && p.staff_active !== false ? `<button class="btn btn-sm btn-danger staff-delete-btn" onclick="deleteStaff('${escapeHtml(p.staff_id)}')" title="${t('common.delete')}">${t('common.delete')}</button>` : ''}
         </td>
       </tr>
     `;
@@ -750,19 +751,31 @@ async function handleAddStaffSubmit(e) {
   }
 }
 
-async function deleteStaff(staffId) {
+// Our own window, not the browser's confirm(): some phone browsers (e.g. Telegram's) block confirm().
+function deleteStaff(staffId) {
   const person = STATE.staffPayroll.find(p => p.staff_id === staffId);
-  const name = person ? person.staff_name : '';
-  if (!confirm(t('staff.confirmDelete', { name }))) return;
+  STATE.deletingStaff = { id: staffId, name: person ? person.staff_name : '' };
+  document.getElementById('deleteStaffText').textContent = t('staff.confirmDelete', { name: STATE.deletingStaff.name });
+  openModal('deleteStaffModal');
+}
+
+async function confirmDeleteStaff() {
+  const { id, name } = STATE.deletingStaff || {};
+  if (!id) return;
+  const submit = document.getElementById('deleteStaffSubmit');
+  submit.disabled = true;
   try {
-    const res = await apiFetch(`${API_BASE}/staff/${encodeURIComponent(staffId)}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || t('common.error'));
+    const res = await apiFetch(`${API_BASE}/staff/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : t('common.error'));
+    closeModal('deleteStaffModal');
     showToast(t('staff.deleted', { name }), 'warning');
-    syncWithBackend();
-    if (can('staff.view')) loadStaffAttendance();
+    await syncWithBackend();
+    if (can('staff.view')) { loadStaffAttendance(); loadStaffSheet(); }
   } catch (err) {
-    showToast(err.message, 'warning');
+    showToast(err.message || t('common.error'), 'warning');
+  } finally {
+    submit.disabled = false;
   }
 }
 

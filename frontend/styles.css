@@ -2849,3 +2849,5 @@ h1, h2, h3, h4, h5, h6 {
 .deduction-note { color: var(--text-secondary); }
 .deduction-hint { margin: 0 0 14px; color: var(--text-secondary); }
 .deduction-result { margin: 10px 0 0; font-weight: 600; }
+
+#staffPayrollTableBody .badge-slate { margin-left: 4px; }

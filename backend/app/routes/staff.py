@@ -99,10 +99,12 @@ def delete_staff(staff_id: str, user: dict = Depends(require("staff.manage"))):
         conn.close()
         raise HTTPException(status_code=404, detail="Xodim topilmadi")
 
-    # Soft delete: paid salary history stays in the books for the accountant;
-    # unpaid future payroll rows for this person are dropped.
+    # Soft delete: paid salary history stays in the books. Unpaid salary for earlier months is
+    # still owed, so it stays payable; only this month's and later unpaid rows are dropped.
+    this_month = date.today().strftime("%Y-%m")
     conn.execute("UPDATE staff SET status = 'INACTIVE' WHERE id = ? AND org_id = ?", (staff_id, org))
-    conn.execute("DELETE FROM staff_payroll WHERE staff_id = ? AND org_id = ? AND status != 'PAID'", (staff_id, org))
+    conn.execute("DELETE FROM staff_payroll WHERE staff_id = ? AND org_id = ? AND status != 'PAID' AND month >= ?",
+                 (staff_id, org, this_month))
 
     conn.execute("INSERT INTO activity_logs (org_id, icon, message) VALUES (?, '🗑️', ?)",
                  (org, f"Xodim o'chirildi: {staff['name']} ({staff['role']})."))
@@ -176,7 +178,8 @@ def mark_staff_attendance(data: StaffAttendanceSchema, user: dict = Depends(requ
         raise HTTPException(status_code=400, detail="Kelajakdagi kun uchun davomat belgilab bo'lmaydi")
     org = user["org"]
     conn = get_connection()
-    staff = conn.execute("SELECT name FROM staff WHERE id = ? AND org_id = ?", (data.staff_id, org)).fetchone()
+    staff = conn.execute("SELECT name FROM staff WHERE id = ? AND org_id = ? AND status = 'ACTIVE'",
+                         (data.staff_id, org)).fetchone()
     if not staff:
         conn.close()
         raise HTTPException(status_code=404, detail="Xodim topilmadi")
@@ -252,12 +255,13 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
         conn.commit()
     ctx = payroll.month_context(conn, org, year, mon)
     rows = conn.execute("""
-    SELECT pr.*, s.name as staff_name, s.role, s.phone, s.hire_date
+    SELECT pr.*, s.name as staff_name, s.role, s.phone, s.hire_date, s.status AS staff_status
     FROM staff_payroll pr
     JOIN staff s ON pr.staff_id = s.id
-    WHERE pr.month = ? AND pr.org_id = ? AND (s.status = 'ACTIVE' OR pr.status = 'PAID')
+    WHERE pr.month = ? AND pr.org_id = ?
+      AND (s.status = 'ACTIVE' OR pr.status = 'PAID' OR pr.month < ?)
     ORDER BY pr.status DESC, s.name ASC
-    """, (key, org)).fetchall()
+    """, (key, org, date.today().strftime("%Y-%m"))).fetchall()
     conn.close()
 
     result = []
@@ -269,6 +273,7 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
             "id": r["id"],
             "staff_id": r["staff_id"],
             "staff_name": r["staff_name"],
+            "staff_active": r["staff_status"] == "ACTIVE",
             "role": r["role"],
             "phone": r["phone"],
             "month": r["month"],

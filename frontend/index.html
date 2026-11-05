@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>try { const t = localStorage.getItem('bogcha_theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=20261105a">
+  <link rel="stylesheet" href="styles.css?v=20261105b">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -982,6 +982,22 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="deleteStaffModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="staff.deleteModal.title">Xodimni o'chirish</h3>
+        <button class="modal-close" onclick="closeModal('deleteStaffModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <p class="delete-group-text" id="deleteStaffText"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('deleteStaffModal')" data-i18n="common.cancel">Bekor qilish</button>
+        <button type="button" class="btn btn-danger" id="deleteStaffSubmit" onclick="confirmDeleteStaff()" data-i18n="common.delete">O'chirish</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="deductionModal">
     <div class="modal-box">
       <div class="modal-header">
@@ -1403,7 +1419,7 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="i18n.js?v=20261105a"></script>
-  <script src="app.js?v=20261105a"></script>
+  <script src="i18n.js?v=20261105b"></script>
+  <script src="app.js?v=20261105b"></script>
 </body>
 </html>

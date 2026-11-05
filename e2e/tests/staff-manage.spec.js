@@ -18,9 +18,11 @@ for (const role of ['accountant', 'super_admin']) {
     const row = page.locator('#staffPayrollTableBody tr', { hasText: name });
     await expect(row).toBeVisible();
 
-    page.once('dialog', (d) => d.accept());
     await row.locator('.staff-delete-btn').click();
+    await expect(page.locator('#deleteStaffModal')).toHaveClass(/open/);
+    await page.locator('#deleteStaffSubmit').click();
     await expect(row).toHaveCount(0);
+    await expect(page.locator('#staffSheetBody')).not.toContainText(name);
   });
 }
 
