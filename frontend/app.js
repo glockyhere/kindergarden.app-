@@ -438,7 +438,7 @@ function staffMonth() {
 
 function setPayrollData(data) {
   STATE.staffPayroll = data.rows || [];
-  STATE.payrollMeta = { month: data.month, working_days: data.working_days, rules: data.rules };
+  STATE.payrollMeta = { month: data.month, working_days: data.working_days };
 }
 
 async function reloadPayroll() {
@@ -454,18 +454,75 @@ function renderStaffRulesSummary() {
   const el = document.getElementById('staffRulesSummary');
   const meta = STATE.payrollMeta;
   if (!el || !meta) return;
-  const start = meta.rules.deduction_start;
-  el.textContent = t('staff.rulesSummary', { days: meta.working_days, pct: meta.rules.late_penalty_pct, start: start || '—' });
+  el.textContent = t('staff.rulesSummary', { days: meta.working_days });
 }
 
+// Deduction is typed in by the accountant; attendance is shown next to it only as a hint.
 function staffDeductionCell(p) {
-  const total = (p.absence_deduction || 0) + (p.late_deduction || 0);
-  const parts = [];
-  if (p.absent_days) parts.push(t('staff.deduct.absent', { n: p.absent_days }));
-  if (p.late_days) parts.push(t('staff.deduct.late', { n: p.late_days }));
-  const detail = parts.length ? `<br><small class="text-muted">${parts.join(' · ')}</small>` : '';
-  const tip = t('staff.deduct.tip', { rate: formatMoney(p.day_rate), days: p.working_days });
-  return `<td class="${total ? 'text-rose' : ''}" title="${tip}">${signedMoney(-total)}${detail}</td>`;
+  const amount = p.deduction || 0;
+  const hints = [];
+  if (p.absent_days) hints.push(t('staff.deduct.absent', { n: p.absent_days }));
+  if (p.late_days) hints.push(t('staff.deduct.late', { n: p.late_days }));
+  const note = p.deduction_note ? `<br><small class="deduction-note">${escapeHtml(p.deduction_note)}</small>` : '';
+  const hint = hints.length ? `<br><small class="text-muted" title="${t('staff.deduct.hintTitle')}">${hints.join(' · ')}</small>` : '';
+  const edit = p.status !== 'PAID' && can('staff.pay')
+    ? ` <button type="button" class="btn btn-sm btn-secondary deduction-edit" onclick="openDeductionModal('${escapeHtml(p.id)}')" aria-label="${t('staff.deductionModal.title')}" title="${t('staff.deductionModal.title')}">${PENCIL_ICON}</button>`
+    : '';
+  return `<td><span class="${amount ? 'text-rose' : ''}">${signedMoney(-amount)}</span>${edit}${note}${hint}</td>`;
+}
+
+function openDeductionModal(payrollId) {
+  const p = STATE.staffPayroll.find(x => x.id === payrollId);
+  if (!p) return;
+  STATE.deductionPayrollId = payrollId;
+  document.getElementById('deductionModalTitle').textContent = t('staff.deductionModal.titleNamed', { name: p.staff_name });
+  const hints = [];
+  if (p.absent_days) hints.push(t('staff.deduct.absent', { n: p.absent_days }));
+  if (p.late_days) hints.push(t('staff.deduct.late', { n: p.late_days }));
+  document.getElementById('deductionHint').textContent = t('staff.deductionModal.hint', {
+    salary: formatMoney(p.base_salary),
+    attendance: hints.length ? hints.join(', ') : t('staff.deductionModal.noAbsence'),
+  });
+  const amount = document.getElementById('deductionAmount');
+  amount.max = p.base_salary + (p.bonus || 0);
+  amount.value = p.deduction || 0;
+  document.getElementById('deductionNote').value = p.deduction_note || '';
+  amount.oninput = () => updateDeductionResult(p);
+  updateDeductionResult(p);
+  openModal('deductionModal');
+  setTimeout(() => amount.select(), 50);
+}
+
+function updateDeductionResult(p) {
+  const amount = parseFloat(document.getElementById('deductionAmount').value) || 0;
+  const toPay = Math.max(0, p.base_salary + (p.bonus || 0) - (p.advance_paid || 0) - amount);
+  document.getElementById('deductionResult').textContent = t('staff.deductionModal.result', { amount: formatMoney(toPay) });
+}
+
+async function saveDeduction(e) {
+  e.preventDefault();
+  const id = STATE.deductionPayrollId;
+  const submit = document.getElementById('deductionSubmit');
+  submit.disabled = true;
+  try {
+    const res = await apiFetch(`${API_BASE}/staff/payroll/${encodeURIComponent(id)}/deduction`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: parseFloat(document.getElementById('deductionAmount').value) || 0,
+        note: document.getElementById('deductionNote').value.trim() || null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : t('toast.genericError'));
+    closeModal('deductionModal');
+    showToast(t('staff.deductionModal.saved'), 'success');
+    await reloadPayroll();
+  } catch (err) {
+    showToast(err.message || t('toast.genericError'), 'warning');
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 function renderStaffPayroll() {
@@ -536,7 +593,6 @@ function renderStaffSheet() {
   const [year, month] = data.month.split('-').map(Number);
   const today = todayISO();
   const holidays = new Set(data.holidays);
-  const start = data.rules.deduction_start || '';
   const iso = d => `${data.month}-${String(d).padStart(2, '0')}`;
   const isOff = d => [0, 6].includes(new Date(year, month - 1, d).getDay()) || holidays.has(iso(d));
 
@@ -561,7 +617,7 @@ function renderStaffSheet() {
         continue;
       }
       if (day > today) { cells += `<td class="${todayCls}"></td>`; continue; }
-      const counted = day >= start && day < today;
+      const counted = day >= (s.hire_date || '') && day < today;
       const inner = status
         ? tabelCell(status)
         : `<span class="tabel-day-cell ${counted ? 'u-cell' : ''}" title="${counted ? t('staff.sheet.unmarked') : ''}">${counted ? '?' : ''}</span>`;

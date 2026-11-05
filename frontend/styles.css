@@ -2843,3 +2843,9 @@ h1, h2, h3, h4, h5, h6 {
 .group-tab-actions { display: flex; gap: 8px; }
 .group-tab-actions:empty { display: none; }
 .group-tab-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Manual salary deduction */
+.deduction-edit { margin-left: 6px; padding: 2px 6px; vertical-align: middle; }
+.deduction-note { color: var(--text-secondary); }
+.deduction-hint { margin: 0 0 14px; color: var(--text-secondary); }
+.deduction-result { margin: 10px 0 0; font-weight: 600; }

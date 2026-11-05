@@ -16,45 +16,14 @@ def _full_month(status_by_day=None):
     return marks
 
 
-def test_day_rate_is_salary_over_working_days():
-    b = payroll.breakdown(2_100_000, None, _full_month(), MARCH, RULES, AFTER_MARCH)
+def test_attendance_counts_only_what_was_marked():
+    marks = _full_month({"2025-03-03": "ABSENT", "2025-03-04": "EXCUSED", "2025-03-05": "LATE"})
+    del marks["2025-03-06"]
+    b = payroll.breakdown(2_100_000, None, marks, MARCH, RULES, AFTER_MARCH)
     assert b["working_days"] == 21
-    assert b["day_rate"] == 100_000
-    assert b["absence_deduction"] == 0 and b["late_deduction"] == 0
-
-
-def test_unexcused_absence_deducts_a_day_excused_does_not():
-    marks = _full_month({"2025-03-03": "ABSENT", "2025-03-04": "EXCUSED"})
-    b = payroll.breakdown(2_100_000, None, marks, MARCH, RULES, AFTER_MARCH)
-    assert (b["absent_days"], b["excused_days"]) == (1, 1)
-    assert b["absence_deduction"] == 100_000
-
-
-def test_late_deducts_percentage_of_day():
-    marks = _full_month({"2025-03-03": "LATE", "2025-03-04": "LATE"})
-    b = payroll.breakdown(2_100_000, None, marks, MARCH, RULES, AFTER_MARCH)
-    assert b["late_days"] == 2
-    assert b["late_deduction"] == 50_000
-
-
-def test_unmarked_past_working_day_counts_as_absent():
-    marks = _full_month()
-    del marks["2025-03-05"]
-    b = payroll.breakdown(2_100_000, None, marks, MARCH, RULES, AFTER_MARCH)
-    assert (b["absent_days"], b["unmarked_days"]) == (1, 1)
-    assert b["absence_deduction"] == 100_000
-
-
-def test_today_and_future_are_not_deducted_until_marked():
-    b = payroll.breakdown(2_100_000, None, {}, MARCH, RULES, "2025-03-10")
-    # 3,4,5,6,7 are past and unmarked; the 10th (today) and later are not counted yet.
-    assert b["absent_days"] == 5
-
-
-def test_nothing_before_deduction_start_or_hire_date():
-    rules = {**RULES, "deduction_start": "2025-03-17"}
-    assert payroll.breakdown(2_100_000, None, {}, MARCH, rules, AFTER_MARCH)["absent_days"] == 11
-    assert payroll.breakdown(2_100_000, "2025-03-24", {}, MARCH, RULES, AFTER_MARCH)["absent_days"] == 6
+    assert (b["absent_days"], b["excused_days"], b["late_days"], b["unmarked_days"]) == (1, 1, 1, 1)
+    # No money is computed from attendance any more.
+    assert "absence_deduction" not in b and "late_deduction" not in b
 
 
 def test_holidays_are_not_working_days():
@@ -63,13 +32,6 @@ def test_holidays_are_not_working_days():
 
 
 # ---- API ---------------------------------------------------------------
-
-def _set_rules(client, auth_headers, **overrides):
-    body = {"late_penalty_pct": 25, "deduction_start": "2025-01-01", "holidays": [], **overrides}
-    res = client.put("/api/v1/settings/payroll", json=body, headers=auth_headers("director"))
-    assert res.status_code == 200, res.text
-    return res.json()
-
 
 def _mark_month(staff_id, overrides=None):
     conn = get_connection()
@@ -88,35 +50,80 @@ def _payroll_row(client, auth_headers, staff_id, month="2025-03"):
     return next(r for r in body["rows"] if r["staff_id"] == staff_id)
 
 
-def test_payroll_applies_deductions(client, auth_headers):
-    _set_rules(client, auth_headers)
-    _mark_month("st_1", {"2025-03-03": "ABSENT", "2025-03-04": "LATE"})
+def _set_deduction(client, auth_headers, payroll_id, amount, note=None, role="accountant"):
+    return client.put(f"/api/v1/staff/payroll/{payroll_id}/deduction", json={"amount": amount, "note": note},
+                      headers=auth_headers(role))
+
+
+def test_absence_no_longer_deducts_automatically(client, auth_headers):
+    _mark_month("st_1", {"2025-03-03": "ABSENT", "2025-03-04": "LATE", "2025-03-05": None})
     row = _payroll_row(client, auth_headers, "st_1")
-    day = row["base_salary"] / 21
-    assert row["absent_days"] == 1 and row["late_days"] == 1
-    assert row["absence_deduction"] == round(day)
-    assert row["late_deduction"] == round(day * 0.25)
-    assert row["total_to_pay"] == row["base_salary"] - row["absence_deduction"] - row["late_deduction"]
+    assert (row["absent_days"], row["late_days"], row["unmarked_days"]) == (1, 1, 1)
+    assert row["deduction"] == 0
+    assert row["total_to_pay"] == row["base_salary"]
 
 
-def test_paid_month_keeps_its_deduction_and_locks_attendance(client, auth_headers):
-    _set_rules(client, auth_headers)
+def test_accountant_enters_deduction_by_hand(client, auth_headers):
+    row = _payroll_row(client, auth_headers, "st_1")
+    res = _set_deduction(client, auth_headers, row["id"], 150_000, "  2 kun kelmadi  ")
+    assert res.status_code == 200
+    row = _payroll_row(client, auth_headers, "st_1")
+    assert row["deduction"] == 150_000 and row["deduction_note"] == "2 kun kelmadi"
+    assert row["total_to_pay"] == row["base_salary"] - 150_000
+
+    log = client.get("/api/v1/audit/log", headers=auth_headers("director")).json()
+    assert log[0]["action"] == "staff.deduction"
+
+    # Clearing it back to zero works too.
+    assert _set_deduction(client, auth_headers, row["id"], 0).status_code == 200
+    assert _payroll_row(client, auth_headers, "st_1")["total_to_pay"] == row["base_salary"]
+
+
+def test_deduction_validation(client, auth_headers):
+    row = _payroll_row(client, auth_headers, "st_1")
+    assert _set_deduction(client, auth_headers, row["id"], -1).status_code == 422
+    assert _set_deduction(client, auth_headers, row["id"], row["base_salary"] + 1).status_code == 400
+    assert _set_deduction(client, auth_headers, "nope", 1).status_code == 404
+
+
+def test_only_finance_roles_can_set_deduction(client, auth_headers):
+    row = _payroll_row(client, auth_headers, "st_1")
+    for role in ("teacher", "nurse"):
+        assert _set_deduction(client, auth_headers, row["id"], 1, role=role).status_code == 403
+    for role in ("accountant", "super_admin", "director"):
+        assert _set_deduction(client, auth_headers, row["id"], 1, role=role).status_code == 200
+
+
+def test_paid_month_keeps_its_deduction_and_locks(client, auth_headers):
     _mark_month("st_1", {"2025-03-03": "ABSENT"})
+    row = _payroll_row(client, auth_headers, "st_1")
+    _set_deduction(client, auth_headers, row["id"], 100_000)
     row = _payroll_row(client, auth_headers, "st_1")
     paid = client.post("/api/v1/staff/pay", json={"payroll_id": row["id"], "amount": row["total_to_pay"]},
                        headers=auth_headers("accountant"))
     assert paid.status_code == 200
 
+    after = _payroll_row(client, auth_headers, "st_1")
+    assert after["status"] == "PAID" and after["deduction"] == 100_000
+    assert after["final_paid"] == row["base_salary"] - 100_000
+    assert _set_deduction(client, auth_headers, row["id"], 0).status_code == 400
     res = client.post("/api/v1/staff/attendance/mark", json={"staff_id": "st_1", "status": "PRESENT", "date": "2025-03-03"},
                       headers=auth_headers("accountant"))
     assert res.status_code == 400
-    _set_rules(client, auth_headers, late_penalty_pct=90, deduction_start="2025-03-20")
-    assert _payroll_row(client, auth_headers, "st_1")["absence_deduction"] == row["absence_deduction"]
+
+
+def test_month_paid_with_old_automatic_deduction_still_shows_it(client, auth_headers):
+    row = _payroll_row(client, auth_headers, "st_1")
+    conn = get_connection()
+    conn.execute("""UPDATE staff_payroll SET status = 'PAID', final_paid = base_salary - 800000,
+                    absence_deduction = 800000, late_deduction = 0 WHERE id = ?""", (row["id"],))
+    conn.commit()
+    conn.close()
+    assert _payroll_row(client, auth_headers, "st_1")["deduction"] == 800_000
 
 
 def test_past_day_can_be_corrected_and_is_audited(client, auth_headers):
-    _set_rules(client, auth_headers)
-    _mark_month("st_2", {"2025-03-03": None})
+    _mark_month("st_2", {"2025-03-03": "ABSENT"})
     assert _payroll_row(client, auth_headers, "st_2")["absent_days"] == 1
 
     res = client.post("/api/v1/staff/attendance/mark", json={"staff_id": "st_2", "status": "EXCUSED", "date": "2025-03-03"},
@@ -133,34 +140,9 @@ def test_future_day_cannot_be_marked(client, auth_headers):
     assert res.status_code == 400
 
 
-def test_holiday_reduces_working_days_in_payroll(client, auth_headers):
-    _set_rules(client, auth_headers, holidays=[{"date": "2025-03-21", "name": "Navro'z"}])
-    _mark_month("st_1", {"2025-03-21": None})
-    row = _payroll_row(client, auth_headers, "st_1")
-    assert row["working_days"] == 20
-    assert row["absent_days"] == 0
-
-
 def test_monthly_staff_sheet(client, auth_headers):
-    _set_rules(client, auth_headers)
     _mark_month("st_1", {"2025-03-03": "ABSENT"})
     body = client.get("/api/v1/staff/attendance/month?month=2025-03", headers=auth_headers("accountant")).json()
     st1 = next(s for s in body["staff"] if s["id"] == "st_1")
-    assert body["days_in_month"] == 31 and body["working_days"] == 21
+    assert body["days_in_month"] == 31
     assert st1["days"]["3"] == "ABSENT" and st1["absent_days"] == 1
-
-
-def test_only_management_can_change_payroll_rules(client, auth_headers):
-    body = {"late_penalty_pct": 10, "deduction_start": "2025-01-01", "holidays": []}
-    for role in ("accountant", "teacher", "nurse"):
-        assert client.put("/api/v1/settings/payroll", json=body, headers=auth_headers(role)).status_code == 403
-    assert client.get("/api/v1/settings/payroll", headers=auth_headers("accountant")).status_code == 200
-    assert client.put("/api/v1/settings/payroll", json={**body, "late_penalty_pct": 150},
-                      headers=auth_headers("director")).status_code == 422
-
-
-def test_new_database_defaults_protect_untracked_history(client, auth_headers):
-    rules = client.get("/api/v1/settings/payroll", headers=auth_headers("director")).json()
-    assert rules["late_penalty_pct"] == 25
-    assert rules["deduction_start"] > date.today().isoformat()
-    assert any(h["date"].endswith("-12-08") for h in rules["holidays"])

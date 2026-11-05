@@ -337,7 +337,8 @@ def migrate(cursor):
 
     payroll_columns = {r[1] for r in cursor.execute("PRAGMA table_info(staff_payroll)")}
     for column, ddl in (("absent_days", "INTEGER"), ("late_days", "INTEGER"),
-                        ("absence_deduction", "REAL"), ("late_deduction", "REAL")):
+                        ("absence_deduction", "REAL"), ("late_deduction", "REAL"),
+                        ("manual_deduction", "REAL DEFAULT 0"), ("deduction_note", "TEXT")):
         if column not in payroll_columns:
             cursor.execute(f"ALTER TABLE staff_payroll ADD COLUMN {column} {ddl}")
 

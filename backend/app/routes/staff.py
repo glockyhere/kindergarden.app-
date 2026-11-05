@@ -14,6 +14,10 @@ class PaySalarySchema(BaseModel):
     amount: float
     bonus: Optional[float] = 0
 
+class DeductionSchema(BaseModel):
+    amount: float = Field(ge=0)
+    note: Optional[str] = Field(default=None, max_length=200)
+
 class StaffAttendanceSchema(BaseModel):
     staff_id: str
     status: str
@@ -153,7 +157,7 @@ def staff_attendance_month(month: Optional[str] = None, user: dict = Depends(req
         "rules": ctx["rules"],
         "staff": [
             {
-                "id": s["id"], "name": s["name"], "role": s["role"],
+                "id": s["id"], "name": s["name"], "role": s["role"], "hire_date": s["hire_date"],
                 "days": {str(int(d[8:])): st for d, st in sorted(ctx["marks"].get(s["id"], {}).items())},
                 **payroll.staff_breakdown(ctx, s["id"], s["base_salary"], s["hire_date"]),
             }
@@ -259,12 +263,8 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
     result = []
     for r in rows:
         calc = payroll.staff_breakdown(ctx, r["staff_id"], r["base_salary"], r["hire_date"])
-        if r["status"] == "PAID" and r["absence_deduction"] is not None:
-            # A paid month is history: show what was actually deducted at payment time.
-            calc.update(absent_days=r["absent_days"], late_days=r["late_days"],
-                        absence_deduction=r["absence_deduction"], late_deduction=r["late_deduction"])
-        total = max(0, r["base_salary"] + r["bonus"] - r["advance_paid"]
-                    - calc["absence_deduction"] - calc["late_deduction"])
+        deduction = _row_deduction(r)
+        total = max(0, r["base_salary"] + r["bonus"] - r["advance_paid"] - deduction)
         result.append({
             "id": r["id"],
             "staff_id": r["staff_id"],
@@ -279,9 +279,52 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
             "status": r["status"],
             "paid_date": r["paid_date"],
             **calc,
+            "deduction": deduction,
+            "deduction_note": r["deduction_note"],
             "total_to_pay": total,
         })
-    return {"month": key, "working_days": len(ctx["work"]), "rules": ctx["rules"], "rows": result}
+    return {"month": key, "working_days": len(ctx["work"]), "rows": result}
+
+
+def _row_deduction(r) -> float:
+    """The accountant's deduction, plus any automatic deduction a month was already paid with
+    before deductions became manual (paid history must not change)."""
+    deduction = r["manual_deduction"] or 0
+    if r["status"] == "PAID":
+        deduction += (r["absence_deduction"] or 0) + (r["late_deduction"] or 0)
+    return deduction
+
+
+@router.put("/payroll/{payroll_id}/deduction")
+def set_deduction(payroll_id: str, data: DeductionSchema, user: dict = Depends(require("staff.pay"))):
+    org = user["org"]
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT pr.status, pr.base_salary, pr.bonus, pr.manual_deduction, pr.deduction_note, s.name
+        FROM staff_payroll pr JOIN staff s ON pr.staff_id = s.id
+        WHERE pr.id = ? AND pr.org_id = ?
+    """, (payroll_id, org)).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Maosh yozuvi topilmadi")
+    if row["status"] == "PAID":
+        conn.close()
+        raise HTTPException(status_code=400, detail="To'langan oylikni o'zgartirib bo'lmaydi")
+    if data.amount > row["base_salary"] + (row["bonus"] or 0):
+        conn.close()
+        raise HTTPException(status_code=400, detail="Ushlanma maoshdan katta bo'lishi mumkin emas")
+
+    note = (data.note or "").strip() or None
+    old = {"deduction": row["manual_deduction"] or 0, "deduction_note": row["deduction_note"]}
+    new = {"deduction": data.amount, "deduction_note": note}
+    conn.execute("UPDATE staff_payroll SET manual_deduction = ?, deduction_note = ? WHERE id = ?",
+                 (data.amount, note, payroll_id))
+    changes = audit.diff(old, new)
+    if changes:
+        audit.record(conn, user, "staff.deduction", "payroll", payroll_id, row["name"], changes)
+    conn.commit()
+    conn.close()
+    return {"success": True, "deduction": data.amount, "deduction_note": note}
 
 
 @router.post("/pay")
@@ -294,7 +337,8 @@ def pay_salary(data: PaySalarySchema, user: dict = Depends(require("staff.pay"))
     c = conn.cursor()
 
     c.execute("""
-    SELECT pr.status, pr.month, pr.staff_id, pr.base_salary, s.name, s.role, s.hire_date FROM staff_payroll pr
+    SELECT pr.status, pr.month, pr.staff_id, pr.base_salary, pr.manual_deduction, s.name, s.role, s.hire_date
+    FROM staff_payroll pr
     JOIN staff s ON pr.staff_id = s.id
     WHERE pr.id = ? AND pr.org_id = ?
     """, (data.payroll_id, org))
@@ -311,19 +355,19 @@ def pay_salary(data: PaySalarySchema, user: dict = Depends(require("staff.pay"))
                                    row["staff_id"], row["base_salary"], row["hire_date"])
 
     today = date.today().isoformat()
+    # Keep the attendance counts with the paid month; the deduction itself is the manual one.
     c.execute("""
     UPDATE staff_payroll
     SET status = 'PAID', paid_date = ?, final_paid = ?,
-        absent_days = ?, late_days = ?, absence_deduction = ?, late_deduction = ?
+        absent_days = ?, late_days = ?, absence_deduction = 0, late_deduction = 0
     WHERE id = ? AND org_id = ?
-    """, (today, data.amount, calc["absent_days"], calc["late_days"],
-          calc["absence_deduction"], calc["late_deduction"], data.payroll_id, org))
+    """, (today, data.amount, calc["absent_days"], calc["late_days"], data.payroll_id, org))
 
     c.execute("INSERT INTO activity_logs (org_id, icon, message) VALUES (?, '💵', ?)",
               (org, f"{row['name']} ({row['role']}) uchun oylik maosh to'landi."))
     audit.record(conn, user, "staff.pay", "payroll", data.payroll_id, row["name"],
                  {"amount": {"old": None, "new": data.amount}, "status": {"old": row["status"], "new": "PAID"},
-                  "deduction": {"old": None, "new": calc["absence_deduction"] + calc["late_deduction"]}})
+                  "deduction": {"old": None, "new": row["manual_deduction"] or 0}})
 
     conn.commit()
     conn.close()

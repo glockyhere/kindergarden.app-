@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>try { const t = localStorage.getItem('bogcha_theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=20261031b">
+  <link rel="stylesheet" href="styles.css?v=20261105a">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -70,7 +70,7 @@
 
         <button class="nav-item" data-tab="kitchen" data-perm="kitchen.view">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18"/><path d="M12 11V4a1 1 0 0 1 1-1 5 5 0 0 1 5 5v2"/><path d="M5 11v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-8"/></svg>
-          <span data-i18n="nav.kitchen">Ошхона харажатлари</span>
+          <span data-i18n="nav.kitchen">Oshxona xarajatlari</span>
         </button>
 
         <button class="nav-item" data-tab="tabel" data-perm="tabel.view">
@@ -338,10 +338,10 @@
                     <th data-i18n="children.th.group">Guruhi</th>
                     <th data-i18n="children.th.age">Yoshi / Tug'ilgan kuni</th>
                     <th data-i18n="children.th.parent">Ota-onasi & Aloqa</th>
-                    <th data-i18n="children.th.health">Соғлиги</th>
-                    <th data-perm-col="children.finance" data-i18n="children.th.discount">Скидка</th>
-                    <th data-perm-col="children.finance" data-i18n="children.th.note">Изох</th>
-                    <th data-perm-col="children.finance" data-i18n="children.th.price">Нархи</th>
+                    <th data-i18n="children.th.health">Sog'lig'i</th>
+                    <th data-perm-col="children.finance" data-i18n="children.th.discount">Chegirma</th>
+                    <th data-perm-col="children.finance" data-i18n="children.th.note">Izoh</th>
+                    <th data-perm-col="children.finance" data-i18n="children.th.price">Narxi</th>
                     <th id="thPaymentStatus" data-perm-col="children.finance" data-i18n="children.th.paymentStatus">To'lov Holati</th>
                     <th id="thDocuments" class="text-right" data-perm-col="children.finance" data-i18n="children.th.documents">Hujjatlar</th>
                     <th id="thDelete" class="text-right col-actions" data-i18n="common.delete">O'chirish</th>
@@ -450,7 +450,7 @@
         <section class="tab-panel" id="tab-kitchen">
           <div class="panel-header">
             <div>
-              <h1 class="panel-title" data-i18n="kitchen.title">Ошхона харажатлари</h1>
+              <h1 class="panel-title" data-i18n="kitchen.title">Oshxona xarajatlari</h1>
               <p class="panel-subtitle" data-i18n="kitchen.subtitle">Haftalik oziq-ovqat xaridlari: mahsulot, miqdor, narx va bitta bolaga to'g'ri keladigan xarajat.</p>
             </div>
             <div class="header-actions">
@@ -774,7 +774,7 @@
                     <th data-i18n="staff.th.baseSalary">Asosiy Oklad</th>
                     <th data-i18n="staff.th.bonus">KPI / Bonus</th>
                     <th data-i18n="staff.th.advance">To'langan Avans</th>
-                    <th data-i18n="staff.th.deduction">Davomat chegirmasi</th>
+                    <th data-i18n="staff.th.deduction">Ushlanma</th>
                     <th data-i18n="staff.th.remaining">To'lanadigan Qoldiq</th>
                     <th data-i18n="staff.th.status">Holat</th>
                     <th class="text-right" data-i18n="staff.th.action">Amal</th>
@@ -922,8 +922,8 @@
 
             <div class="card glass-card span-2">
               <h2 class="card-title" data-i18n="settings.payrollTitle">Maosh va davomat qoidalari</h2>
-              <p class="panel-subtitle" data-i18n="settings.payrollSubtitle">Kunlik maosh = oklad ÷ oydagi ish kunlari (Du–Ju, bayramlarsiz). Sababsiz kelmagan va belgilanmagan ish kunlari ushlab qolinadi, sababli kunlar to'lanadi.</p>
-              <div class="settings-payroll-grid mt-4">
+              <p class="panel-subtitle" data-i18n="settings.payrollSubtitle">Bayram kunlari xodimlar davomat tabelida ish kuni hisoblanmaydi. Maoshdan ushlanmani buxgalter o'zi kiritadi.</p>
+              <div class="settings-payroll-grid mt-4" hidden>
                 <div class="form-group">
                   <label for="settingsLatePct" data-i18n="settings.latePct">Kechikish uchun chegirma (kunlik maoshdan %):</label>
                   <input type="number" id="settingsLatePct" class="custom-input" min="0" max="100" step="1">
@@ -979,6 +979,33 @@
         <button class="modal-close" onclick="closeModal('childHistoryModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="modal-body" id="childHistoryBody"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="deductionModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" id="deductionModalTitle" data-i18n="staff.deductionModal.title">Maoshdan ushlanma</h3>
+        <button class="modal-close" onclick="closeModal('deductionModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <form id="deductionForm" onsubmit="saveDeduction(event)">
+        <div class="modal-body">
+          <p class="deduction-hint" id="deductionHint"></p>
+          <div class="form-group">
+            <label for="deductionAmount" data-i18n="staff.deductionModal.amount">Ushlanma summasi (UZS)</label>
+            <input type="number" id="deductionAmount" class="custom-input" min="0" step="any" required>
+          </div>
+          <div class="form-group">
+            <label for="deductionNote" data-i18n="staff.deductionModal.note">Sababi (ixtiyoriy)</label>
+            <input type="text" id="deductionNote" class="custom-input" maxlength="200" data-i18n-placeholder="staff.deductionModal.notePlaceholder" placeholder="Masalan: 2 kun sababsiz kelmadi">
+          </div>
+          <p class="deduction-result" id="deductionResult"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('deductionModal')" data-i18n="common.cancel">Bekor qilish</button>
+          <button type="submit" class="btn btn-primary" id="deductionSubmit" data-i18n="common.save">Saqlash</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -1050,14 +1077,14 @@
   <div class="modal-overlay" id="editHealthModal">
     <div class="modal-box">
       <div class="modal-header">
-        <h3 class="modal-title" data-i18n="modal.editHealth.title">Соғлиги / Salomatligini tahrirlash</h3>
+        <h3 class="modal-title" data-i18n="modal.editHealth.title">Sog'lig'ini tahrirlash</h3>
         <button class="modal-close" onclick="closeModal('editHealthModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <form id="editHealthForm" onsubmit="handleHealthSubmit(event)">
         <div class="modal-body">
           <input type="hidden" id="editHealthChildId">
           <div class="form-group"><label data-i18n="modal.editHealth.childLabel">Bola:</label><input type="text" id="editHealthChildName" class="custom-input" disabled></div>
-          <div class="form-group"><label data-i18n="modal.editHealth.valueLabel">Соғлиги / Salomatlik holati:</label><input type="text" id="editHealthValue" required class="custom-input" placeholder="Masalan: Sog'lom yoki Tuxumga allergiya" data-i18n-placeholder="modal.editHealth.placeholder"></div>
+          <div class="form-group"><label data-i18n="modal.editHealth.valueLabel">Salomatlik holati:</label><input type="text" id="editHealthValue" required class="custom-input" placeholder="Masalan: Sog'lom yoki Tuxumga allergiya" data-i18n-placeholder="modal.editHealth.placeholder"></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('editHealthModal')" data-i18n="common.cancel">Bekor qilish</button>
@@ -1073,7 +1100,7 @@
   <div class="modal-overlay" id="editPricingModal">
     <div class="modal-box">
       <div class="modal-header">
-        <h3 class="modal-title" data-i18n="modal.editPricing.title">Скидка / Изох / Нархи tahrirlash</h3>
+        <h3 class="modal-title" data-i18n="modal.editPricing.title">Chegirma, izoh va narxni tahrirlash</h3>
         <button class="modal-close" onclick="closeModal('editPricingModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <form id="editPricingForm" onsubmit="handlePricingSubmit(event)">
@@ -1088,13 +1115,13 @@
                 <div class="form-group"><label data-i18n="modal.editPricing.basePrice">Asl narx (bazaviy):</label><input type="number" step="1000" id="editPricingBasePrice" class="custom-input" placeholder="Masalan: 2800000" oninput="calcPricingDiscount()"></div>
                 <div class="form-group"><label data-i18n="modal.editPricing.discountPercent">Chegirma foizi (%):</label><input type="number" step="1" min="0" max="100" id="editPricingDiscountPercent" class="custom-input" placeholder="Masalan: 30" oninput="calcPricingDiscount()"></div>
               </div>
-              <small id="editPricingCalcResult" style="color: var(--text-muted);" data-i18n="modal.editPricing.calcHint">Asl narx va foizni kiriting: Нархи avtomatik hisoblanadi.</small>
+              <small id="editPricingCalcResult" style="color: var(--text-muted);" data-i18n="modal.editPricing.calcHint">Asl narx va foizni kiriting: narx avtomatik hisoblanadi.</small>
             </div>
           </div>
 
-          <div class="form-group"><label data-i18n="modal.editPricing.discount">Скидка:</label><input type="text" id="editPricingDiscount" class="custom-input" placeholder="Masalan: 50% yoki Транспорт"></div>
-          <div class="form-group"><label data-i18n="modal.editPricing.note">Изох:</label><input type="text" id="editPricingNote" class="custom-input" placeholder="Masalan: ходим yoki 2 та фарзанд"></div>
-          <div class="form-group"><label data-i18n="modal.editPricing.price">Нархи (yakuniy, UZS):</label><input type="number" step="1000" id="editPricingPrice" class="custom-input" placeholder="Masalan: 2800000"></div>
+          <div class="form-group"><label data-i18n="modal.editPricing.discount">Chegirma:</label><input type="text" id="editPricingDiscount" class="custom-input" placeholder="Masalan: 50% yoki transport"></div>
+          <div class="form-group"><label data-i18n="modal.editPricing.note">Izoh:</label><input type="text" id="editPricingNote" class="custom-input" placeholder="Masalan: xodim farzandi yoki 2 ta farzand"></div>
+          <div class="form-group"><label data-i18n="modal.editPricing.price">Narxi (yakuniy, UZS):</label><input type="number" step="1000" id="editPricingPrice" class="custom-input" placeholder="Masalan: 2800000"></div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" onclick="closeModal('editPricingModal')" data-i18n="common.cancel">Bekor qilish</button>
@@ -1376,7 +1403,7 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="i18n.js?v=20261031b"></script>
-  <script src="app.js?v=20261031b"></script>
+  <script src="i18n.js?v=20261105a"></script>
+  <script src="app.js?v=20261105a"></script>
 </body>
 </html>

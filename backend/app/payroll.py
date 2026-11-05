@@ -65,8 +65,7 @@ def staff_breakdown(ctx: dict, staff_id: str, base_salary: float, hire_date: str
 
 def breakdown(base_salary: float, hire_date: str | None, marks: dict, work: list[str],
               rules: dict, today_iso: str) -> dict:
-    day_rate = base_salary / len(work) if work else 0
-    floor = max(filter(None, [rules.get("deduction_start"), hire_date or None]), default="")
+    floor = hire_date or ""
 
     absent = late = excused = unmarked = 0
     for d in work:
@@ -84,14 +83,11 @@ def breakdown(base_salary: float, hire_date: str | None, marks: dict, work: list
         elif status == "EXCUSED":
             excused += 1
 
-    absent_total = absent + unmarked
+    # Attendance is information only: the accountant enters any salary deduction by hand.
     return {
         "working_days": len(work),
-        "day_rate": round(day_rate),
-        "absent_days": absent_total,
+        "absent_days": absent,
         "unmarked_days": unmarked,
         "late_days": late,
         "excused_days": excused,
-        "absence_deduction": round(day_rate * absent_total),
-        "late_deduction": round(day_rate * rules["late_penalty_pct"] / 100 * late),
     }
