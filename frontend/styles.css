@@ -2853,3 +2853,9 @@ h1, h2, h3, h4, h5, h6 {
 #staffPayrollTableBody .badge-slate { margin-left: 4px; }
 
 .salary-edit { margin-left: 6px; padding: 2px 6px; vertical-align: middle; }
+
+/* Staff sections (Rahbariyat / Asosiy bo'lim) */
+.staff-section-row td { background: var(--surface-muted, #eef1f6); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 12px; color: var(--text-secondary); padding: 8px 12px; }
+.staff-section-title { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 12px; color: var(--text-secondary); margin: 14px 0 6px; }
+.staff-section-title:first-child { margin-top: 0; }
+.staff-edit { margin-left: 4px; padding: 2px 6px; vertical-align: middle; }

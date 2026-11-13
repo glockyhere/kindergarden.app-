@@ -537,12 +537,17 @@ function renderStaffPayroll() {
   }
   const canManage = can('staff.manage');
 
+  let section = null;
   tbody.innerHTML = list.map(p => {
     const toPay = p.status === 'PAID' ? p.final_paid : p.total_to_pay;
-    return `
+    const header = p.department !== section
+      ? `<tr class="staff-section-row"><td colspan="9">${t('staff.section.' + (section = p.department))}</td></tr>` : '';
+    return `${header}
       <tr>
         <td>
-          <b>${escapeHtml(p.staff_name)}</b><br>
+          <b>${escapeHtml(p.staff_name)}</b>${canManage && p.staff_active !== false
+            ? ` <button type="button" class="btn btn-sm btn-secondary staff-edit" onclick="openEditStaffModal('${escapeHtml(p.staff_id)}')" aria-label="${t('staff.editModal.title')}" title="${t('staff.editModal.title')}">${PENCIL_ICON}</button>`
+            : ''}<br>
           <span class="badge badge-indigo">${escapeHtml(p.role)}</span>
           ${p.staff_active === false ? `<span class="badge badge-slate">${t('staff.leftBadge')}</span>` : ''}
         </td>
@@ -608,7 +613,10 @@ function renderStaffSheet() {
 
   if (!data.staff.length) { body.innerHTML = `<tr><td colspan="${data.days_in_month + 4}" class="text-muted">${t('att.staffEmpty')}</td></tr>`; return; }
 
+  let section = null;
   body.innerHTML = data.staff.map(s => {
+    const header = s.department && s.department !== section
+      ? `<tr class="staff-section-row"><td colspan="${data.days_in_month + 4}">${t('staff.section.' + (section = s.department))}</td></tr>` : '';
     let cells = '';
     for (let d = 1; d <= data.days_in_month; d++) {
       const day = iso(d);
@@ -626,7 +634,7 @@ function renderStaffSheet() {
         : `<span class="tabel-day-cell ${counted ? 'u-cell' : ''}" title="${counted ? t('staff.sheet.unmarked') : ''}">${counted ? '?' : ''}</span>`;
       cells += `<td class="${todayCls}"><button type="button" class="staff-sheet-day" onclick="openStaffDay('${day}')" aria-label="${escapeHtml(s.name)} ${day}">${inner}</button></td>`;
     }
-    return `<tr>
+    return `${header}<tr>
       <td><b>${escapeHtml(s.name)}</b></td>
       ${cells}
       <td><b class="${s.absent_days ? 'text-rose' : ''}">${s.absent_days}</b>${s.unmarked_days ? ` <small class="text-muted" title="${t('staff.sheet.unmarked')}">(${s.unmarked_days}?)</small>` : ''}</td>
@@ -733,6 +741,7 @@ async function handleAddStaffSubmit(e) {
     phone: document.getElementById('newStaffPhone').value.trim(),
     base_salary: parseFloat(document.getElementById('newStaffSalary').value),
     hire_date: document.getElementById('newStaffHireDate').value || null,
+    department: document.getElementById('newStaffDepartment').value,
   };
   const btn = document.getElementById('addStaffSubmitBtn');
   btn.disabled = true;
@@ -750,6 +759,47 @@ async function handleAddStaffSubmit(e) {
     showToast(err.message, 'warning');
   } finally {
     btn.disabled = false;
+  }
+}
+
+function openEditStaffModal(staffId) {
+  const fromPayroll = STATE.staffPayroll.find(x => x.staff_id === staffId);
+  const fromAtt = STAFF_ATT.rows.find(x => x.id === staffId);
+  const p = fromPayroll || (fromAtt && { staff_name: fromAtt.name, role: fromAtt.role, department: fromAtt.department });
+  if (!p) return;
+  STATE.editStaffId = staffId;
+  document.getElementById('editStaffName').value = p.staff_name;
+  document.getElementById('editStaffRole').value = p.role;
+  document.getElementById('editStaffDepartment').value = p.department || 'ASOSIY';
+  const roles = [...new Set(STATE.staffPayroll.map(x => x.role).filter(Boolean))].sort();
+  document.getElementById('editStaffRoleOptions').innerHTML = roles.map(r => `<option value="${escapeHtml(r)}"></option>`).join('');
+  openModal('editStaffModal');
+}
+
+async function saveStaffEdit(e) {
+  e.preventDefault();
+  const submit = document.getElementById('editStaffSubmit');
+  submit.disabled = true;
+  try {
+    const res = await apiFetch(`${API_BASE}/staff/${encodeURIComponent(STATE.editStaffId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('editStaffName').value.trim(),
+        role: document.getElementById('editStaffRole').value.trim(),
+        department: document.getElementById('editStaffDepartment').value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : t('toast.genericError'));
+    closeModal('editStaffModal');
+    showToast(t('staff.editModal.saved', { name: data.name }), 'success');
+    await reloadPayroll();
+    if (can('staff.view')) { loadStaffAttendance(); loadStaffSheet(); }
+  } catch (err) {
+    showToast(err.message || t('toast.genericError'), 'warning');
+  } finally {
+    submit.disabled = false;
   }
 }
 
@@ -2152,13 +2202,18 @@ function renderStaffAttendance() {
   const unmarked = STAFF_ATT.rows.filter(r => !r.status).length;
   document.getElementById('staffAttSummary').textContent =
     `${present} / ${STAFF_ATT.rows.length} ${t('att.staffInShift')}` + (unmarked ? ` · ${unmarked} ${t('att.staffMarkedSuffix')}` : '');
+  let section = null;
   list.innerHTML = STAFF_ATT.rows.length ? STAFF_ATT.rows.map(r => {
     const meta = attStatusMeta(r.status);
     const role = staffRoleLabel(r.role);
-    return `
+    const header = r.department && r.department !== section
+      ? `<div class="staff-section-title">${t('staff.section.' + (section = r.department))}</div>` : '';
+    return `${header}
       <div class="staff-att-row" data-id="${escapeHtml(r.id)}" data-status="${meta ? meta.cls : 'unmarked'}">
         <div class="staff-att-info">
-          <b>${escapeHtml(r.name)}</b>
+          <b>${escapeHtml(r.name)}</b>${can('staff.manage')
+            ? ` <button type="button" class="btn btn-sm btn-secondary staff-edit" onclick="openEditStaffModal('${escapeHtml(r.id)}')" aria-label="${t('staff.editModal.title')}" title="${t('staff.editModal.title')}">${PENCIL_ICON}</button>`
+            : ''}
           <small>${escapeHtml(role)}${meta ? ` · ${meta.label}${r.check_in_time ? ' ' + r.check_in_time : ''}` : ''}</small>
         </div>
         <div class="staff-att-buttons" role="group" aria-label="${escapeHtml(r.name)}: ${t('att.ariaLabel')}">

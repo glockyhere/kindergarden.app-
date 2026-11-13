@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { loginAs } = require('../helpers');
+const { loginAs, API_BASE } = require('../helpers');
 
 for (const role of ['accountant', 'super_admin']) {
   test(`${role} can add and then remove a staff member from the Staff tab`, async ({ page }) => {
@@ -56,4 +56,49 @@ test('director does not see the salary edit button', async ({ page }) => {
   await page.locator('.nav-item[data-tab="staff"]').click();
   await expect(page.locator('#staffPayrollTableBody tr').first()).toBeVisible();
   await expect(page.locator('.salary-edit')).toHaveCount(0);
+});
+
+test('staff list is split into Rahbariyat and Asosiy bo\'lim, and names can be edited', async ({ page }) => {
+  await loginAs(page, 'accountant');
+  // The demo data has no leadership staff, so add one to see both sections.
+  const token = await page.evaluate(() => localStorage.getItem('bogcha_token'));
+  const created = await page.request.post(`${API_BASE}/staff`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { name: 'BEGLOVA SINOV', role: 'Бухгалтер', base_salary: 1000000, department: 'RAHBARIYAT' },
+  });
+  expect(created.ok()).toBeTruthy();
+  await page.reload();
+  await page.locator('.nav-item[data-tab="staff"]').click();
+  const sections = page.locator('#staffPayrollTableBody .staff-section-row');
+  await expect(sections.first()).toBeVisible();
+  const titles = await sections.allInnerTexts();
+  expect(titles.map(s => s.trim().toLowerCase())).toEqual(["rahbariyat", "asosiy bo'lim"]);
+
+  const row = page.locator('#staffPayrollTableBody tr').filter({ has: page.locator('.staff-edit') }).last();
+  await row.locator('.staff-edit').click();
+  await expect(page.locator('#editStaffModal')).toHaveClass(/open/);
+  const newName = `TAHRIR SINOV ${Date.now()}`;
+  await page.locator('#editStaffName').fill(newName);
+  await page.locator('#editStaffSubmit').click();
+  await expect(page.locator('#editStaffModal')).not.toHaveClass(/open/);
+  await expect(page.locator('#staffPayrollTableBody')).toContainText(newName);
+});
+
+test('director cannot edit staff details', async ({ page }) => {
+  await loginAs(page, 'director');
+  await page.locator('.nav-item[data-tab="staff"]').click();
+  await expect(page.locator('#staffPayrollTableBody tr').first()).toBeVisible();
+  await expect(page.locator('.staff-edit')).toHaveCount(0);
+});
+
+test('names can also be edited from the staff attendance list', async ({ page }) => {
+  await loginAs(page, 'super_admin');
+  await page.locator('.nav-item[data-tab="staff"]').click();
+  const row = page.locator('#staffAttList .staff-att-row').first();
+  await row.locator('.staff-edit').click();
+  await expect(page.locator('#editStaffModal')).toHaveClass(/open/);
+  const newName = `DAVOMATDAN TAHRIR ${Date.now()}`;
+  await page.locator('#editStaffName').fill(newName);
+  await page.locator('#editStaffSubmit').click();
+  await expect(page.locator('#staffAttList')).toContainText(newName);
 });

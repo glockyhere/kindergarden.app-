@@ -1,3 +1,4 @@
+import re
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -29,11 +30,34 @@ class StaffAttendanceSchema(BaseModel):
 class StaffCreateSchema(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=1, max_length=40)
+    phone: str = Field(default="", max_length=40)
     base_salary: float = Field(ge=0)
     hire_date: Optional[str] = None
+    department: str = "ASOSIY"
+
+class StaffUpdateSchema(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=80)
+    department: str
 
 STAFF_STATUSES = {"PRESENT", "ABSENT", "EXCUSED", "LATE"}
+DEPARTMENTS = ("RAHBARIYAT", "ASOSIY")
+# Leadership is listed by position, as on the official staff list (shtat jadvali).
+LEADERSHIP_ORDER = ["Директор", "Хўжалик мудири", "Бош услубчи", "Бухгалтер"]
+_CYR_TO_LAT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo", "ж": "j", "з": "z", "и": "i",
+    "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t",
+    "у": "u", "ф": "f", "х": "x", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sh", "ъ": "", "ы": "i", "ь": "",
+    "э": "e", "ю": "yu", "я": "ya", "ў": "o", "қ": "q", "ғ": "g", "ҳ": "h",
+}
+
+
+def staff_sort_key(department: str | None, role: str | None, name: str | None):
+    """Rahbariyat first (by position), then Asosiy bo'lim A→Z by surname; Cyrillic names sort as Latin."""
+    lead = (department or "ASOSIY") == "RAHBARIYAT"
+    rank = LEADERSHIP_ORDER.index(role) if lead and role in LEADERSHIP_ORDER else len(LEADERSHIP_ORDER)
+    latin = "".join(_CYR_TO_LAT.get(ch, ch) for ch in (name or "").lower())
+    return (0 if lead else 1, rank, re.sub(r"[^a-z ]", "", latin))
 
 
 def _parse_day(value: Optional[str]) -> str:
@@ -66,14 +90,18 @@ def create_staff(data: StaffCreateSchema, user: dict = Depends(require("staff.ma
     except ValueError:
         raise HTTPException(status_code=400, detail="Sana noto'g'ri formatda")
 
+    if data.department not in DEPARTMENTS:
+        raise HTTPException(status_code=400, detail="Bo'lim noto'g'ri")
     org = user["org"]
     name, role, phone = data.name.strip(), data.role.strip(), data.phone.strip()
+    if not name or not role:
+        raise HTTPException(status_code=400, detail="Ism va lavozim kiritilishi shart")
     staff_id = f"s_{secrets.token_hex(4)}"
     conn = get_connection()
     conn.execute("""
-        INSERT INTO staff (id, org_id, name, role, phone, base_salary, hire_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
-    """, (staff_id, org, name, role, phone, data.base_salary, hire_date))
+        INSERT INTO staff (id, org_id, name, role, phone, base_salary, hire_date, status, department)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+    """, (staff_id, org, name, role, phone, data.base_salary, hire_date, data.department))
 
     # The payroll table is what the Staff tab lists, so a new person needs a row straight away.
     month = max(date.today(), date.fromisoformat(hire_date)).strftime("%Y-%m")
@@ -117,6 +145,32 @@ def delete_staff(staff_id: str, user: dict = Depends(require("staff.manage"))):
     return {"success": True, "staff_id": staff_id}
 
 
+@router.patch("/{staff_id}")
+def update_staff(staff_id: str, data: StaffUpdateSchema, user: dict = Depends(require("staff.manage"))):
+    name, role = data.name.strip(), data.role.strip()
+    if not name or not role:
+        raise HTTPException(status_code=400, detail="Ism va lavozim kiritilishi shart")
+    if data.department not in DEPARTMENTS:
+        raise HTTPException(status_code=400, detail="Bo'lim noto'g'ri")
+    org = user["org"]
+    conn = get_connection()
+    staff = conn.execute("SELECT name, role, department FROM staff WHERE id = ? AND org_id = ? AND status = 'ACTIVE'",
+                         (staff_id, org)).fetchone()
+    if not staff:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Xodim topilmadi")
+    old = {"name": staff["name"], "role": staff["role"], "department": staff["department"] or "ASOSIY"}
+    new = {"name": name, "role": role, "department": data.department}
+    changes = audit.diff(old, new)
+    if changes:
+        conn.execute("UPDATE staff SET name = ?, role = ?, department = ? WHERE id = ? AND org_id = ?",
+                     (name, role, data.department, staff_id, org))
+        audit.record(conn, user, "staff.update", "staff", staff_id, name, changes)
+        conn.commit()
+    conn.close()
+    return {"success": True, "staff_id": staff_id, **new}
+
+
 @router.patch("/{staff_id}/salary")
 def update_salary(staff_id: str, data: SalarySchema, user: dict = Depends(require("staff.manage"))):
     """New salary applies to this month's and later unpaid salaries; paid and earlier months keep theirs."""
@@ -149,19 +203,20 @@ def staff_attendance(att_date: Optional[str] = None, user: dict = Depends(requir
     target = _parse_day(att_date)
     conn = get_connection()
     rows = conn.execute("""
-    SELECT s.id, s.name, s.role, sa.status, sa.check_in_time
+    SELECT s.id, s.name, s.role, s.department, sa.status, sa.check_in_time
     FROM staff s
     LEFT JOIN staff_attendance sa ON sa.staff_id = s.id AND sa.date = ?
     WHERE s.org_id = ? AND s.status = 'ACTIVE'
-    ORDER BY s.role ASC, s.name ASC
     """, (target, user["org"])).fetchall()
     conn.close()
+    rows = sorted(rows, key=lambda r: staff_sort_key(r["department"], r["role"], r["name"]))
     return {
         "date": target,
         # Past days stay editable so a forgotten mark can be fixed before salaries are paid.
         "editable": target <= date.today().isoformat() and "staff.attendance.mark" in user["permissions"],
         "staff": [
-            {"id": r["id"], "name": r["name"], "role": r["role"], "status": r["status"], "check_in_time": r["check_in_time"]}
+            {"id": r["id"], "name": r["name"], "role": r["role"], "department": r["department"] or "ASOSIY",
+             "status": r["status"], "check_in_time": r["check_in_time"]}
             for r in rows
         ],
     }
@@ -174,12 +229,12 @@ def staff_attendance_month(month: Optional[str] = None, user: dict = Depends(req
     conn = get_connection()
     ctx = payroll.month_context(conn, org, year, mon)
     staff = conn.execute("""
-    SELECT id, name, role, base_salary, hire_date FROM staff
+    SELECT id, name, role, department, base_salary, hire_date FROM staff
     WHERE org_id = ? AND (status = 'ACTIVE'
           OR EXISTS (SELECT 1 FROM staff_attendance sa WHERE sa.staff_id = staff.id AND sa.date BETWEEN ? AND ?))
-    ORDER BY role ASC, name ASC
     """, (org, ctx["start"], ctx["end"])).fetchall()
     conn.close()
+    staff = sorted(staff, key=lambda s: staff_sort_key(s["department"], s["role"], s["name"]))
     _, _, last = payroll.month_bounds(year, mon)
     return {
         "month": f"{year:04d}-{mon:02d}",
@@ -190,6 +245,7 @@ def staff_attendance_month(month: Optional[str] = None, user: dict = Depends(req
         "staff": [
             {
                 "id": s["id"], "name": s["name"], "role": s["role"], "hire_date": s["hire_date"],
+                "department": s["department"] or "ASOSIY",
                 "days": {str(int(d[8:])): st for d, st in sorted(ctx["marks"].get(s["id"], {}).items())},
                 **payroll.staff_breakdown(ctx, s["id"], s["base_salary"], s["hire_date"]),
             }
@@ -242,12 +298,11 @@ def get_staff_list(user: dict = Depends(require("staff.view"))):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-    SELECT id, name, role, phone, base_salary, hire_date, status
+    SELECT id, name, role, phone, base_salary, hire_date, status, department
     FROM staff
     WHERE org_id = ? AND status = 'ACTIVE'
-    ORDER BY role ASC, name ASC
     """, (user["org"],))
-    rows = c.fetchall()
+    rows = sorted(c.fetchall(), key=lambda r: staff_sort_key(r["department"], r["role"], r["name"]))
     conn.close()
 
     return [
@@ -258,7 +313,8 @@ def get_staff_list(user: dict = Depends(require("staff.view"))):
             "phone": r["phone"],
             "salary": r["base_salary"],
             "hire_date": r["hire_date"],
-            "status": r["status"]
+            "status": r["status"],
+            "department": r["department"] or "ASOSIY",
         }
         for r in rows
     ]
@@ -285,14 +341,14 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
         conn.commit()
     ctx = payroll.month_context(conn, org, year, mon)
     rows = conn.execute("""
-    SELECT pr.*, s.name as staff_name, s.role, s.phone, s.hire_date, s.status AS staff_status
+    SELECT pr.*, s.name as staff_name, s.role, s.phone, s.hire_date, s.status AS staff_status, s.department
     FROM staff_payroll pr
     JOIN staff s ON pr.staff_id = s.id
     WHERE pr.month = ? AND pr.org_id = ?
       AND (s.status = 'ACTIVE' OR pr.status = 'PAID' OR pr.month < ?)
-    ORDER BY pr.status DESC, s.name ASC
     """, (key, org, date.today().strftime("%Y-%m"))).fetchall()
     conn.close()
+    rows = sorted(rows, key=lambda r: staff_sort_key(r["department"], r["role"], r["staff_name"]))
 
     result = []
     for r in rows:
@@ -304,6 +360,7 @@ def get_payroll(month: Optional[str] = None, user: dict = Depends(require("staff
             "staff_id": r["staff_id"],
             "staff_name": r["staff_name"],
             "staff_active": r["staff_status"] == "ACTIVE",
+            "department": r["department"] or "ASOSIY",
             "role": r["role"],
             "phone": r["phone"],
             "month": r["month"],

@@ -123,3 +123,54 @@ def test_salary_change_validation(client, auth_headers):
     assert client.patch("/api/v1/staff/nope/salary", json={"base_salary": 5}, headers=headers).status_code == 404
     client.delete(f"/api/v1/staff/{staff_id}", headers=headers)
     assert client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": 5}, headers=headers).status_code == 404
+
+
+def test_staff_sort_key_puts_leadership_first_then_alphabetical():
+    from app.routes.staff import staff_sort_key
+    people = [
+        ("ASOSIY", "Тарбиячи", "SUVANOVA FERUZA"),
+        ("RAHBARIYAT", "Бухгалтер", "BEGLOVA ALFIYA"),
+        ("ASOSIY", "Тарбиячи", "Исматова Гўзал"),
+        ("RAHBARIYAT", "Директор", "ZOKIROV ALI"),
+        ("ASOSIY", "Қўриқчи", "ABDULLAYEVA MADINA"),
+        ("RAHBARIYAT", "Бош услубчи", "XAMROKULOV OYBEK"),
+        ("ASOSIY", "Тарбиячи", "ISROILOVA FERUZA"),
+    ]
+    ordered = [p[2] for p in sorted(people, key=lambda p: staff_sort_key(*p))]
+    assert ordered == ["ZOKIROV ALI", "XAMROKULOV OYBEK", "BEGLOVA ALFIYA",
+                       "ABDULLAYEVA MADINA", "Исматова Гўзал", "ISROILOVA FERUZA", "SUVANOVA FERUZA"]
+
+
+def test_payroll_lists_rahbariyat_first(client, auth_headers):
+    headers = auth_headers("accountant")
+    client.post("/api/v1/staff", json={**NEW_STAFF, "name": "AAA BOSHLIQ", "role": "Бухгалтер", "department": "RAHBARIYAT"},
+                headers=headers)
+    rows = client.get("/api/v1/staff/payroll", headers=headers).json()["rows"]
+    departments = [r["department"] for r in rows]
+    assert departments == sorted(departments, key=lambda d: d != "RAHBARIYAT")
+    assert rows[0]["department"] == "RAHBARIYAT"
+
+
+def test_accountant_edits_name_role_and_department(client, auth_headers):
+    headers = auth_headers("accountant")
+    staff_id = client.post("/api/v1/staff", json=NEW_STAFF, headers=headers).json()["staff_id"]
+    res = client.patch(f"/api/v1/staff/{staff_id}",
+                       json={"name": "  BEGLOVA ALFIYA RISHATOVNA ", "role": "Бухгалтер", "department": "RAHBARIYAT"},
+                       headers=headers)
+    assert res.status_code == 200
+    me = next(s for s in client.get("/api/v1/staff", headers=headers).json() if s["id"] == staff_id)
+    assert (me["name"], me["role"], me["department"]) == ("BEGLOVA ALFIYA RISHATOVNA", "Бухгалтер", "RAHBARIYAT")
+    log = client.get("/api/v1/audit/log", headers=auth_headers("super_admin")).json()
+    assert log[0]["action"] == "staff.update" and "name" in log[0]["changes"]
+
+
+def test_only_accountant_and_super_admin_can_edit_staff(client, auth_headers):
+    staff_id = client.post("/api/v1/staff", json=NEW_STAFF, headers=auth_headers("accountant")).json()["staff_id"]
+    body = {"name": "X", "role": "Y", "department": "ASOSIY"}
+    for role in ("director", "teacher", "nurse"):
+        assert client.patch(f"/api/v1/staff/{staff_id}", json=body, headers=auth_headers(role)).status_code == 403
+    for role in ("accountant", "super_admin"):
+        assert client.patch(f"/api/v1/staff/{staff_id}", json=body, headers=auth_headers(role)).status_code == 200
+    bad = client.patch(f"/api/v1/staff/{staff_id}", json={**body, "department": "OTHER"}, headers=auth_headers("accountant"))
+    assert bad.status_code == 400
+    assert client.patch(f"/api/v1/staff/{staff_id}", json={**body, "name": "   "}, headers=auth_headers("accountant")).status_code == 400

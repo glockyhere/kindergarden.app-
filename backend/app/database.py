@@ -335,6 +335,11 @@ def migrate(cursor):
     if "archived_at" not in {r[1] for r in cursor.execute("PRAGMA table_info(groups)")}:
         cursor.execute("ALTER TABLE groups ADD COLUMN archived_at TEXT")
 
+    if "department" not in {r[1] for r in cursor.execute("PRAGMA table_info(staff)")}:
+        cursor.execute("ALTER TABLE staff ADD COLUMN department TEXT DEFAULT 'ASOSIY'")
+        cursor.execute("""UPDATE staff SET department = CASE WHEN role IN
+                          ('Директор', 'Хўжалик мудири', 'Бош услубчи', 'Бухгалтер') THEN 'RAHBARIYAT' ELSE 'ASOSIY' END""")
+
     payroll_columns = {r[1] for r in cursor.execute("PRAGMA table_info(staff_payroll)")}
     for column, ddl in (("absent_days", "INTEGER"), ("late_days", "INTEGER"),
                         ("absence_deduction", "REAL"), ("late_deduction", "REAL"),

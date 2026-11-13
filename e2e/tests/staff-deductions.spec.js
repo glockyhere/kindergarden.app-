@@ -60,8 +60,8 @@ test('a deduction larger than the salary is refused', async ({ page }) => {
 test('past staff attendance can still be corrected from the monthly sheet', async ({ page }) => {
   await loginAs(page, 'accountant');
   await page.locator('.nav-item[data-tab="staff"]').click();
-  const firstSheetRow = page.locator('#staffSheetBody tr').first();
-  await page.locator('#staffSheetBody .staff-sheet-day').first().click();
+  const firstSheetRow = page.locator('#staffSheetBody tr:not(.staff-section-row)').first();
+  await firstSheetRow.locator('.staff-sheet-day').first().click();
   await expect(page.locator('#staffAttList .staff-att-row').first()).toBeVisible();
   await page.locator('#staffAttList .staff-att-row').first().locator('.att-btn[data-status="EXCUSED"]').click();
   await expect(firstSheetRow.locator('.e-cell').first()).toBeVisible();

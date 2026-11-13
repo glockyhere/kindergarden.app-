@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>try { const t = localStorage.getItem('bogcha_theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
-  <link rel="stylesheet" href="styles.css?v=20261113a">
+  <link rel="stylesheet" href="styles.css?v=20261113c">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -982,6 +982,33 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="editStaffModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" data-i18n="staff.editModal.title">Xodim ma'lumotlarini tahrirlash</h3>
+        <button class="modal-close" onclick="closeModal('editStaffModal')" aria-label="Yopish"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <form id="editStaffForm" onsubmit="saveStaffEdit(event)">
+        <div class="modal-body">
+          <div class="form-group"><label for="editStaffName" data-i18n="staff.modal.name">F.I.Sh:</label><input type="text" id="editStaffName" required maxlength="120" class="custom-input"></div>
+          <div class="form-row">
+            <div class="form-group"><label for="editStaffRole" data-i18n="staff.modal.role">Lavozimi:</label><input type="text" id="editStaffRole" required maxlength="80" class="custom-input" list="editStaffRoleOptions"><datalist id="editStaffRoleOptions"></datalist></div>
+            <div class="form-group"><label for="editStaffDepartment" data-i18n="staff.modal.department">Bo'lim:</label>
+              <select id="editStaffDepartment" class="custom-select">
+                <option value="RAHBARIYAT" data-i18n="staff.section.RAHBARIYAT">Rahbariyat</option>
+                <option value="ASOSIY" data-i18n="staff.section.ASOSIY">Asosiy bo'lim</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('editStaffModal')" data-i18n="common.cancel">Bekor qilish</button>
+          <button type="submit" class="btn btn-primary" id="editStaffSubmit" data-i18n="common.save">Saqlash</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="salaryModal">
     <div class="modal-box">
       <div class="modal-header">
@@ -1057,9 +1084,15 @@
       <form id="addStaffForm" onsubmit="handleAddStaffSubmit(event)">
         <div class="modal-body">
           <div class="form-group"><label for="newStaffName" data-i18n="staff.modal.name">F.I.Sh:</label><input type="text" id="newStaffName" required maxlength="120" class="custom-input"></div>
+          <div class="form-group"><label for="newStaffDepartment" data-i18n="staff.modal.department">Bo'lim:</label>
+            <select id="newStaffDepartment" class="custom-select">
+              <option value="ASOSIY" data-i18n="staff.section.ASOSIY">Asosiy bo'lim</option>
+              <option value="RAHBARIYAT" data-i18n="staff.section.RAHBARIYAT">Rahbariyat</option>
+            </select>
+          </div>
           <div class="form-row">
             <div class="form-group"><label for="newStaffRole" data-i18n="staff.modal.role">Lavozimi:</label><input type="text" id="newStaffRole" required maxlength="80" class="custom-input" list="staffRoleOptions"><datalist id="staffRoleOptions"></datalist></div>
-            <div class="form-group"><label for="newStaffPhone" data-i18n="staff.modal.phone">Telefon:</label><input type="tel" id="newStaffPhone" required maxlength="40" class="custom-input" placeholder="+998 90 123 45 67"></div>
+            <div class="form-group"><label for="newStaffPhone" data-i18n="staff.modal.phone">Telefon:</label><input type="tel" id="newStaffPhone" maxlength="40" class="custom-input" placeholder="+998 90 123 45 67"></div>
           </div>
           <div class="form-row">
             <div class="form-group"><label for="newStaffSalary" data-i18n="staff.modal.salary">Asosiy oklad (so'm):</label><input type="number" id="newStaffSalary" required min="0" step="1000" class="custom-input"></div>
@@ -1442,7 +1475,7 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="i18n.js?v=20261113a"></script>
-  <script src="app.js?v=20261113a"></script>
+  <script src="i18n.js?v=20261113c"></script>
+  <script src="app.js?v=20261113c"></script>
 </body>
 </html>
