@@ -2745,14 +2745,15 @@ function handleChildSubmit(e) {
       parent_phone: parentPhone,
       allergies: allergies
     })
-  }).then(r => r.json()).then(() => {
+  }).then(async r => {
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : t('toast.genericError'));
     closeModal('addChildModal');
     syncWithBackend();
     showToast(t('modal.addChild.saved', { name: `${firstName} ${lastName}` }), 'success');
-  }).catch(() => {
-    closeModal('addChildModal');
-    syncWithBackend();
-    showToast(t('modal.addChild.savedFallback'), 'success');
+  }).catch(err => {
+    // Keep the form open so nothing typed is lost, and never claim it was saved.
+    showToast(err.message || t('toast.genericError'), 'warning');
   });
 }
 

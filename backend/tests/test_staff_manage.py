@@ -174,3 +174,37 @@ def test_only_accountant_and_super_admin_can_edit_staff(client, auth_headers):
     bad = client.patch(f"/api/v1/staff/{staff_id}", json={**body, "department": "OTHER"}, headers=auth_headers("accountant"))
     assert bad.status_code == 400
     assert client.patch(f"/api/v1/staff/{staff_id}", json={**body, "name": "   "}, headers=auth_headers("accountant")).status_code == 400
+
+
+def test_deleted_staff_leave_the_monthly_sheet_even_with_attendance(client, auth_headers):
+    from datetime import date
+    from app.database import get_connection
+    headers = auth_headers("accountant")
+    staff_id = client.post("/api/v1/staff", json=NEW_STAFF, headers=headers).json()["staff_id"]
+    today = date.today().isoformat()
+    conn = get_connection()
+    conn.execute("INSERT INTO staff_attendance (id, org_id, staff_id, date, status) VALUES ('sa_t', 'org_smart_kids', ?, ?, 'PRESENT')",
+                 (staff_id, today))
+    conn.commit()
+    conn.close()
+    client.delete(f"/api/v1/staff/{staff_id}", headers=headers)
+    sheet = client.get(f"/api/v1/staff/attendance/month?month={today[:7]}", headers=headers).json()
+    assert all(s["id"] != staff_id for s in sheet["staff"])
+
+
+def test_duplicate_staff_names_are_refused(client, auth_headers):
+    headers = auth_headers("accountant")
+    first = client.post("/api/v1/staff", json={**NEW_STAFF, "name": "XATAMOVA MARIYA ALISHEROVNA"}, headers=headers)
+    assert first.status_code == 200
+    for same in ("XATAMOVA MARIYA ALISHEROVNA", "  xatamova  mariya alisherovna ", "Хатамова Мария Алишеровна"):
+        res = client.post("/api/v1/staff", json={**NEW_STAFF, "name": same}, headers=headers)
+        assert res.status_code == 400 and "allaqachon" in res.json()["detail"]
+    # Renaming someone else to that name is refused too; renaming yourself is fine.
+    other = client.post("/api/v1/staff", json={**NEW_STAFF, "name": "BOSHQA ODAM"}, headers=headers).json()["staff_id"]
+    body = {"name": "XATAMOVA MARIYA ALISHEROVNA", "role": "x", "department": "ASOSIY"}
+    assert client.patch(f"/api/v1/staff/{other}", json=body, headers=headers).status_code == 400
+    me = first.json()["staff_id"]
+    assert client.patch(f"/api/v1/staff/{me}", json=body, headers=headers).status_code == 200
+    # Once the first person is deleted, the name is free again.
+    client.delete(f"/api/v1/staff/{me}", headers=headers)
+    assert client.post("/api/v1/staff", json={**NEW_STAFF, "name": "XATAMOVA MARIYA ALISHEROVNA"}, headers=headers).status_code == 200

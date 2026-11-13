@@ -52,12 +52,23 @@ _CYR_TO_LAT = {
 }
 
 
+def normalize_name(name: str | None) -> str:
+    """Same person, same key: case, Cyrillic vs Latin, apostrophes and extra spaces don't matter."""
+    latin = "".join(_CYR_TO_LAT.get(ch, ch) for ch in (name or "").lower())
+    return " ".join(re.sub(r"[^a-z ]", "", latin).split())
+
+
 def staff_sort_key(department: str | None, role: str | None, name: str | None):
     """Rahbariyat first (by position), then Asosiy bo'lim A→Z by surname; Cyrillic names sort as Latin."""
     lead = (department or "ASOSIY") == "RAHBARIYAT"
     rank = LEADERSHIP_ORDER.index(role) if lead and role in LEADERSHIP_ORDER else len(LEADERSHIP_ORDER)
-    latin = "".join(_CYR_TO_LAT.get(ch, ch) for ch in (name or "").lower())
-    return (0 if lead else 1, rank, re.sub(r"[^a-z ]", "", latin))
+    return (0 if lead else 1, rank, normalize_name(name))
+
+
+def _name_taken(conn, org: str, name: str, except_id: str | None = None) -> bool:
+    key = normalize_name(name)
+    return any(normalize_name(r["name"]) == key and r["id"] != except_id
+               for r in conn.execute("SELECT id, name FROM staff WHERE org_id = ? AND status = 'ACTIVE'", (org,)))
 
 
 def _parse_day(value: Optional[str]) -> str:
@@ -98,6 +109,9 @@ def create_staff(data: StaffCreateSchema, user: dict = Depends(require("staff.ma
         raise HTTPException(status_code=400, detail="Ism va lavozim kiritilishi shart")
     staff_id = f"s_{secrets.token_hex(4)}"
     conn = get_connection()
+    if _name_taken(conn, org, name):
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"{name} ismli xodim allaqachon ro'yxatda bor")
     conn.execute("""
         INSERT INTO staff (id, org_id, name, role, phone, base_salary, hire_date, status, department)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
@@ -159,6 +173,9 @@ def update_staff(staff_id: str, data: StaffUpdateSchema, user: dict = Depends(re
     if not staff:
         conn.close()
         raise HTTPException(status_code=404, detail="Xodim topilmadi")
+    if _name_taken(conn, org, name, except_id=staff_id):
+        conn.close()
+        raise HTTPException(status_code=400, detail=f"{name} ismli xodim allaqachon ro'yxatda bor")
     old = {"name": staff["name"], "role": staff["role"], "department": staff["department"] or "ASOSIY"}
     new = {"name": name, "role": role, "department": data.department}
     changes = audit.diff(old, new)
@@ -230,9 +247,8 @@ def staff_attendance_month(month: Optional[str] = None, user: dict = Depends(req
     ctx = payroll.month_context(conn, org, year, mon)
     staff = conn.execute("""
     SELECT id, name, role, department, base_salary, hire_date FROM staff
-    WHERE org_id = ? AND (status = 'ACTIVE'
-          OR EXISTS (SELECT 1 FROM staff_attendance sa WHERE sa.staff_id = staff.id AND sa.date BETWEEN ? AND ?))
-    """, (org, ctx["start"], ctx["end"])).fetchall()
+    WHERE org_id = ? AND status = 'ACTIVE'
+    """, (org,)).fetchall()
     conn.close()
     staff = sorted(staff, key=lambda s: staff_sort_key(s["department"], s["role"], s["name"]))
     _, _, last = payroll.month_bounds(year, mon)

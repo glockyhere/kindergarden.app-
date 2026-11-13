@@ -4,7 +4,7 @@ from typing import Optional
 import secrets
 from app.database import get_connection
 from app.security import require
-from app import audit
+from app import audit, finance
 
 router = APIRouter(prefix="/api/v1", tags=["Bolalar va Guruhlar"])
 
@@ -250,21 +250,29 @@ def create_child(data: ChildCreateSchema, user: dict = Depends(require("children
     group_id = group["id"]
     monthly_fee = group["monthly_fee"]
 
+    full_name = f"{data.first_name.strip()} {data.last_name.strip()}".strip()
+    from app.routes.staff import normalize_name
+    key = normalize_name(full_name)
+    for other in c.execute("SELECT name, birth_date FROM children WHERE org_id = ? AND status = 'ACTIVE'", (org,)).fetchall():
+        if normalize_name(other["name"]) == key and (other["birth_date"] or "") == (data.birth_date or ""):
+            conn.close()
+            raise HTTPException(status_code=400, detail=f"{full_name} allaqachon ro'yxatda bor")
+
     # Next numeric id after the highest existing one (a count would collide after deletions).
     c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(id, 2) AS INTEGER)), 0) FROM children WHERE id GLOB 'c[0-9]*'")
     new_id = f"c{c.fetchone()[0] + 1}"
-    full_name = f"{data.first_name} {data.last_name}"
 
     c.execute("""
     INSERT INTO children (id, org_id, group_id, name, birth_date, parent_name, parent_phone, allergies, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
     """, (new_id, org, group_id, full_name, data.birth_date, data.parent_name, data.parent_phone, data.allergies or "Yo'q"))
 
-    inv_id = f"inv_{new_id}"
+    period = finance.current_period()
     c.execute("""
     INSERT INTO invoices (id, org_id, child_id, invoice_number, billing_period, amount_due, amount_paid, status, due_date)
-    VALUES (?, ?, ?, ?, '2026-10', ?, ?, 'PAID', '2026-10-15')
-    """, (inv_id, org, new_id, f"INV-2026-10-{new_id.upper()}", monthly_fee, monthly_fee))
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+    """, (f"inv_{new_id}_{period.replace('-', '')}", org, new_id, f"INV-{period}-{new_id.upper()}", period, monthly_fee,
+          "DEBT" if monthly_fee > 0 else "PAID", finance.period_due_date(period)))
 
     c.execute("INSERT INTO activity_logs (org_id, icon, message) VALUES (?, '👶', ?)",
               (org, f"Yangi bola: {full_name} ({data.group_name}) ro'yxatdan o'tdi."))
