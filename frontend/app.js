@@ -547,7 +547,9 @@ function renderStaffPayroll() {
           ${p.staff_active === false ? `<span class="badge badge-slate">${t('staff.leftBadge')}</span>` : ''}
         </td>
         <td>${escapeHtml(p.phone)}</td>
-        <td>${formatMoney(p.base_salary)}</td>
+        <td>${formatMoney(p.base_salary)}${canManage && p.staff_active !== false
+          ? ` <button type="button" class="btn btn-sm btn-secondary salary-edit" onclick="openSalaryModal('${escapeHtml(p.staff_id)}')" aria-label="${t('staff.salaryModal.title')}" title="${t('staff.salaryModal.title')}">${PENCIL_ICON}</button>`
+          : ''}</td>
         <td class="${p.bonus ? 'text-emerald' : ''}">${signedMoney(p.bonus)}</td>
         <td class="${p.advance_paid ? 'text-rose' : ''}">${signedMoney(-p.advance_paid)}</td>
         ${staffDeductionCell(p)}
@@ -748,6 +750,42 @@ async function handleAddStaffSubmit(e) {
     showToast(err.message, 'warning');
   } finally {
     btn.disabled = false;
+  }
+}
+
+function openSalaryModal(staffId) {
+  const p = STATE.staffPayroll.find(x => x.staff_id === staffId);
+  if (!p) return;
+  STATE.salaryStaffId = staffId;
+  document.getElementById('salaryModalTitle').textContent = t('staff.salaryModal.titleNamed', { name: p.staff_name });
+  document.getElementById('salaryCurrent').textContent = t('staff.salaryModal.current', { amount: formatMoney(p.base_salary) });
+  const input = document.getElementById('salaryAmount');
+  input.value = p.base_salary;
+  openModal('salaryModal');
+  setTimeout(() => input.select(), 50);
+}
+
+async function saveSalary(e) {
+  e.preventDefault();
+  const id = STATE.salaryStaffId;
+  const p = STATE.staffPayroll.find(x => x.staff_id === id);
+  const submit = document.getElementById('salarySubmit');
+  submit.disabled = true;
+  try {
+    const res = await apiFetch(`${API_BASE}/staff/${encodeURIComponent(id)}/salary`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_salary: parseFloat(document.getElementById('salaryAmount').value) || 0 }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : t('toast.genericError'));
+    closeModal('salaryModal');
+    showToast(t('staff.salaryModal.saved', { name: p ? p.staff_name : '', amount: formatMoney(data.base_salary) }), 'success');
+    await reloadPayroll();
+  } catch (err) {
+    showToast(err.message || t('toast.genericError'), 'warning');
+  } finally {
+    submit.disabled = false;
   }
 }
 

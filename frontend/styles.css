@@ -2851,3 +2851,5 @@ h1, h2, h3, h4, h5, h6 {
 .deduction-result { margin: 10px 0 0; font-weight: 600; }
 
 #staffPayrollTableBody .badge-slate { margin-left: 4px; }
+
+.salary-edit { margin-left: 6px; padding: 2px 6px; vertical-align: middle; }

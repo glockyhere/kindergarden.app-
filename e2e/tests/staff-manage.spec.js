@@ -35,3 +35,25 @@ for (const role of ['director']) {
     await expect(page.locator('.staff-delete-btn')).toHaveCount(0);
   });
 }
+
+test('accountant changes an employee salary with the edit button', async ({ page }) => {
+  await loginAs(page, 'accountant');
+  await page.locator('.nav-item[data-tab="staff"]').click();
+  const row = page.locator('#staffPayrollTableBody tr').filter({ has: page.locator('.salary-edit') }).first();
+  const name = (await row.locator('td').first().locator('b').innerText()).trim();
+  const named = page.locator('#staffPayrollTableBody tr').filter({ hasText: name });
+
+  await named.locator('.salary-edit').click();
+  await expect(page.locator('#salaryModal')).toHaveClass(/open/);
+  await page.locator('#salaryAmount').fill('4321000');
+  await page.locator('#salarySubmit').click();
+  await expect(page.locator('#salaryModal')).not.toHaveClass(/open/);
+  await expect(named.locator('td').nth(2)).toContainText('4,321,000');
+});
+
+test('director does not see the salary edit button', async ({ page }) => {
+  await loginAs(page, 'director');
+  await page.locator('.nav-item[data-tab="staff"]').click();
+  await expect(page.locator('#staffPayrollTableBody tr').first()).toBeVisible();
+  await expect(page.locator('.salary-edit')).toHaveCount(0);
+});

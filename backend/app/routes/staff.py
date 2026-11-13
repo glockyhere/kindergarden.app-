@@ -14,6 +14,9 @@ class PaySalarySchema(BaseModel):
     amount: float
     bonus: Optional[float] = 0
 
+class SalarySchema(BaseModel):
+    base_salary: float = Field(ge=0, le=1_000_000_000)
+
 class DeductionSchema(BaseModel):
     amount: float = Field(ge=0)
     note: Optional[str] = Field(default=None, max_length=200)
@@ -112,6 +115,33 @@ def delete_staff(staff_id: str, user: dict = Depends(require("staff.manage"))):
     conn.commit()
     conn.close()
     return {"success": True, "staff_id": staff_id}
+
+
+@router.patch("/{staff_id}/salary")
+def update_salary(staff_id: str, data: SalarySchema, user: dict = Depends(require("staff.manage"))):
+    """New salary applies to this month's and later unpaid salaries; paid and earlier months keep theirs."""
+    org = user["org"]
+    conn = get_connection()
+    staff = conn.execute("SELECT name, base_salary FROM staff WHERE id = ? AND org_id = ? AND status = 'ACTIVE'",
+                         (staff_id, org)).fetchone()
+    if not staff:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Xodim topilmadi")
+
+    this_month = date.today().strftime("%Y-%m")
+    conn.execute("UPDATE staff SET base_salary = ? WHERE id = ? AND org_id = ?", (data.base_salary, staff_id, org))
+    updated = conn.execute("""
+        UPDATE staff_payroll SET base_salary = ?
+        WHERE staff_id = ? AND org_id = ? AND status != 'PAID' AND month >= ?
+    """, (data.base_salary, staff_id, org, this_month)).rowcount
+    if staff["base_salary"] != data.base_salary:
+        audit.record(conn, user, "staff.salary", "staff", staff_id, staff["name"],
+                     {"base_salary": {"old": staff["base_salary"], "new": data.base_salary}})
+        conn.execute("INSERT INTO activity_logs (org_id, icon, message) VALUES (?, '💼', ?)",
+                     (org, f"{staff['name']} uchun oylik maosh o'zgartirildi."))
+    conn.commit()
+    conn.close()
+    return {"success": True, "staff_id": staff_id, "base_salary": data.base_salary, "updated_months": updated}
 
 
 @router.get("/attendance")

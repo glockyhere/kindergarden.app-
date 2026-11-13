@@ -57,6 +57,7 @@ ROUTE_CASES = [
     ("GET", "/api/v1/reports/years", "finance.reports", None),
     ("DELETE", "/api/v1/groups/nope", "groups.delete", None),
     ("PUT", "/api/v1/staff/payroll/nope/deduction", "staff.pay", {"amount": 1}),
+    ("PATCH", "/api/v1/staff/nope/salary", "staff.manage", {"base_salary": 1}),
 ]
 
 ALL_ROLES = ["super_admin", "director", "accountant", "teacher", "nurse"]

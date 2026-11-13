@@ -82,3 +82,44 @@ def test_removed_staff_cannot_get_attendance(client, auth_headers):
     client.delete(f"/api/v1/staff/{staff_id}", headers=headers)
     res = client.post("/api/v1/staff/attendance/mark", json={"staff_id": staff_id, "status": "PRESENT"}, headers=headers)
     assert res.status_code == 404
+
+
+def test_salary_change_applies_from_this_month_only(client, auth_headers):
+    from datetime import date
+    headers = auth_headers("accountant")
+    staff_id = client.post("/api/v1/staff", json={**NEW_STAFF, "hire_date": "2025-01-01"}, headers=headers).json()["staff_id"]
+    _set_row(staff_id, "2025-05", "PENDING")
+    _set_row(staff_id, "2025-06", "PAID")
+
+    res = client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": 4_200_000}, headers=headers)
+    assert res.status_code == 200
+
+    this_month = date.today().strftime("%Y-%m")
+    now = next(r for r in client.get(f"/api/v1/staff/payroll?month={this_month}", headers=headers).json()["rows"]
+               if r["staff_id"] == staff_id)
+    assert now["base_salary"] == 4_200_000 and now["total_to_pay"] == 4_200_000
+    for month in ("2025-05", "2025-06"):
+        old = next(r for r in client.get(f"/api/v1/staff/payroll?month={month}", headers=headers).json()["rows"]
+                   if r["staff_id"] == staff_id)
+        assert old["base_salary"] == 3_500_000
+    assert next(s for s in client.get("/api/v1/staff", headers=headers).json() if s["id"] == staff_id)["salary"] == 4_200_000
+
+    log = client.get("/api/v1/audit/log", headers=auth_headers("super_admin")).json()
+    assert log[0]["action"] == "staff.salary"
+
+
+def test_only_accountant_and_super_admin_can_change_salary(client, auth_headers):
+    staff_id = client.post("/api/v1/staff", json=NEW_STAFF, headers=auth_headers("accountant")).json()["staff_id"]
+    for role in ("director", "teacher", "nurse"):
+        assert client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": 1}, headers=auth_headers(role)).status_code == 403
+    for role in ("accountant", "super_admin"):
+        assert client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": 1}, headers=auth_headers(role)).status_code == 200
+
+
+def test_salary_change_validation(client, auth_headers):
+    headers = auth_headers("accountant")
+    staff_id = client.post("/api/v1/staff", json=NEW_STAFF, headers=headers).json()["staff_id"]
+    assert client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": -5}, headers=headers).status_code == 422
+    assert client.patch("/api/v1/staff/nope/salary", json={"base_salary": 5}, headers=headers).status_code == 404
+    client.delete(f"/api/v1/staff/{staff_id}", headers=headers)
+    assert client.patch(f"/api/v1/staff/{staff_id}/salary", json={"base_salary": 5}, headers=headers).status_code == 404
